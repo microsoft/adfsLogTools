@@ -273,7 +273,9 @@ function GetHTTPRequestInformation
     [System.Management.Automation.Runspaces.PSSession]$Session)
 
     #Retreive 403 (Request) and 404 (Response) events along with corresponding 510's from security log
-    $RequestAndResponseEvents = Get403And404Events -CorrID $CorrID -Session $Session
+    $RequestAndResponseEvents = @()
+    $RequestAndResponseEvents += Get403And404Events -CorrID $CorrID -Session $Session
+
     $HeaderEvents = @()
     foreach($Event in $RequestAndResponseEvents)
     {
@@ -288,6 +290,7 @@ function GetHTTPRequestInformation
     for($I = 0; $I -lt $RequestAndResponseEvents.length; $I++)
     {
         $CurrentID = $RequestAndResponseEvents[$I].ID
+
 
         if($CurrentID -eq 403)
         {
@@ -308,7 +311,7 @@ function GetHTTPRequestInformation
             $HeaderObject = CreateHeaderObject #Clear object for next iteration of loop
         }
 
-        if(($I % 2 -eq 0 -and $CurrentID -eq 404) -or ($I %2 -eq 1 -and $CurrentID -eq 403))
+        if(($I % 2 -eq 0 -and $CurrentID -eq 404) -or ($I %2 -eq 1 -and $CurrentID -eq 403) -or ($CurrentID -eq 403 -and $I -eq $RequestAndResponseEvents.length-1) )
         {
             #Expecting each 403 to be followed by a 404. Each 403 should have an even index and each 404 should have an odd index in the list.
             Write-Warning "Unable to match request and response headers"
@@ -358,19 +361,17 @@ function Write-ADFSEventsSummary
 
     #Define Columns
     $col1 = New-Object system.Data.DataColumn Time,([string])
-    $col2 = New-Object System.Data.DataColumn Level,([string])
-    $col3 = New-Object system.Data.DataColumn EventID,([string])
-    $col4 = New-Object system.Data.DataColumn Details,([string])
-    $col5 = New-Object system.Data.DataColumn CorrelationID,([string])
-    $col6 = New-Object system.Data.DataColumn Machine,([string])
-    $col7 = New-Object system.Data.DataColumn Log,([string])
+    $col2 = New-Object system.Data.DataColumn EventID,([string])
+    $col3 = New-Object system.Data.DataColumn Details,([string])
+    $col4 = New-Object system.Data.DataColumn CorrelationID,([string])
+    $col5 = New-Object system.Data.DataColumn Machine,([string])
+    $col6 = New-Object system.Data.DataColumn Log,([string])
     $table.columns.add( $col1 )
     $table.columns.add( $col2 )
     $table.columns.add( $col3 )
     $table.columns.add( $col4 )
     $table.columns.add( $col5 )
     $table.columns.add( $col6 )
-    $table.columns.add( $col7 )
 
     foreach($Event in $input.Events){
         #Create a row
@@ -382,7 +383,6 @@ function Write-ADFSEventsSummary
         $row.CorrelationID = $Event.CorrelationID
         $row.Machine = $Event.MachineName
         $row.Log = $Event.LogName
-        $row.Level = $Event.LevelDisplayName
 
         #Add the row to the table
         $table.Rows.Add($row)    
@@ -496,6 +496,11 @@ function Get-ADFSEvents
         foreach($Event in $Events)
         {
             $ID = [string] $Event.CorrelationID
+
+            if($CorrelationID -ne "" -and $CorrelationID -ne $ID)
+            {
+                continue #Unrelated event mentioned correlation id in data blob
+            }
                 
             if(![string]::IsNullOrEmpty($ID) -and $HashTable.Contains($ID)) #Add event to exisiting list
             {
