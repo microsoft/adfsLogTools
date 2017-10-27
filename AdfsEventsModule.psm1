@@ -385,6 +385,7 @@ function Write-ADFSEventsSummary
         $row.CorrelationID = $Event.CorrelationID
         $row.Machine = $Event.MachineName
         $row.Log = $Event.LogName
+	$row.Level = $Event.LevelDisplayName
 
         #Add the row to the table
         $table.Rows.Add($row)    
