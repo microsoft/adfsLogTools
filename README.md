@@ -57,11 +57,11 @@ The __Headers__ property contains a list of objects, each containing the followi
 
 1.  __QueryString__
 2.  __QueryStringParameters__
-2.  __ResponseString__
-3.  __RequestHeader__
-4.  __ResponseHeader__
-5.  __RequestTime__
-6.  __ResponseTime__
+3.  __ResponseString__
+4.  __RequestHeader__
+5.  __ResponseHeader__
+6.  __RequestTime__
+7.  __ResponseTime__
 
 The __QueryString__ property contains the HTTP verb (GET, POST, etc) and the corresponding query string.
 
