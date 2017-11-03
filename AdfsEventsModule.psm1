@@ -7,46 +7,52 @@
 #
 # ----------------------------------------------------
 
-$CONST_ADFS_ADMIN = "AD FS"
-$CONST_ADFS_AUDIT = "AD FS Auditing"
-$CONST_ADFS_DEBUG = "AD FS Tracing"
+$global:CONST_ADFS_ADMIN = "AD FS"
+$global:CONST_ADFS_AUDIT = "AD FS Auditing"
+$global:CONST_ADFS_DEBUG = "AD FS Tracing"
 
-$CONST_SECURITY_LOG = "security"
-$CONST_ADMIN_LOG = "AD FS/Admin"
-$CONST_DEBUG_LOG = "AD FS Tracing/Debug"
+$global:CONST_SECURITY_LOG = "security"
+$global:CONST_ADMIN_LOG = "AD FS/Admin"
+$global:CONST_DEBUG_LOG = "AD FS Tracing/Debug"
 
-$CONST_LOG_PARAM_SECURITY = "security"
-$CONST_LOG_PARAM_ADMIN = "admin"
-$CONST_LOG_PARAM_DEBUG = "debug"
+$global:CONST_LOG_PARAM_SECURITY = "security"
+$global:CONST_LOG_PARAM_ADMIN = "admin"
+$global:CONST_LOG_PARAM_DEBUG = "debug"
 
-$CONST_QUERY_EVENTID = "System/EventID"
-$CONST_QUERY_OR_JOIN = " or " 
+$global:CONST_QUERY_EVENTID = "System/EventID"
+$global:CONST_QUERY_OR_JOIN = " or " 
 
-$CONST_AUDITS_TO_AGGREGATE = @(299, 324, 403, 404, 411, 412)
-$CONST_AUDITS_LINKED = @(500, 501, 502, 503, 510)
-$CONST_TIMELINE_AUDITS = @(299, 324, 403, 411, 412)
+$global:CONST_AUDITS_TO_AGGREGATE = @( "299", "324", "403", "404", "411", "412")
+$global:CONST_AUDITS_LINKED = @(500, 501, 502, 503, 510)
+$global:CONST_TIMELINE_AUDITS = @(299, 324, 403, 411, 412)
 
-$REQUEST_OBJ_TEMPLATE = ""
-$RESPONSE_OBJ_TEMPLATE = ""
-$ANALYSIS_OBJ_TEMPLATE = ""
-$ERROR_OBJ_TEMPLATE = ""
-$TIMELINE_OBJ_TEMPLATE = ""
-$TOKEN_OBJ_TEMPLATE = ""
+# TODO: PowerShell is absolute garbage at JSON objects. Headers should be {}. 
 
-$TIMELINE_INCOMING = "incoming"
-$TIMELINE_AUTHENTICATION = "authn"
-$TIMELINE_AUTHORIZATION = "authz"
-$TIMELINE_ISSUANCE = "issuance"
-$TIMELINE_SUCCESS = "success"
-$TIMELINE_FAILURE = "fail"
+$global:REQUEST_OBJ_TEMPLATE = '{"num": 0,"time": "1/1/0001 12:00:00 AM","protocol": "","host": "","method": "","url": "","query": "","useragent": "","server": "","clientip": "","contlen": 0,"headers": [],"tokens": [],"ver": "1.0"}'
+$global:RESPONSE_OBJ_TEMPLATE = '{"num": 0,"time": "1/1/0001 12:00:00 AM","result": "","headers": {},"tokens": [],"ver": "1.0"}'
+$global:ANALYSIS_OBJ_TEMPLATE = '{"requests": [],"responses": [],"errors": [],"timeline": [],"ver": "1.0"}'
+$global:ERROR_OBJ_TEMPLATE = '{"time": "1/1/0001 12:00:00 AM","eventid": 0,"level": "", "message": [],"ver": "1.0"}'
+$global:TIMELINE_OBJ_TEMPLATE = '{"time": "","type": "", "tokentype": "", "rp": "","result": "","stage": 0,"ver": "1.0"}'
+$global:TOKEN_OBJ_TEMPLATE = '{"num": 0,"type": "","rp": "","user": "","direction": "","claims": [],"oboclaims": [],"actasclaims": [],"ver": "1.0"}'
 
-$TOKEN_TYPE_ACCESS = "access_token"
+$global:TIMELINE_INCOMING = "incoming"
+$global:TIMELINE_AUTHENTICATION = "authn"
+$global:TIMELINE_AUTHORIZATION = "authz"
+$global:TIMELINE_ISSUANCE = "issuance"
+$global:TIMELINE_SUCCESS = "success"
+$global:TIMELINE_FAILURE = "fail"
 
-$CONST_ADFS_HTTP_PORT = 0
-$CONST_ADFS_HTTPS_PORT = 0
+$global:TOKEN_TYPE_ACCESS = "access_token"
 
-$DidLoadPorts = $false
-$DidLoadJson = $false
+$global:CONST_ADFS_HTTP_PORT = 0
+$global:CONST_ADFS_HTTPS_PORT = 0
+
+$global:DidLoadPorts = $false
+$global:DidLoadJson = $true
+
+
+
+
 
 
 # ----------------------------------------------------
@@ -85,14 +91,21 @@ function MakeQuery
     [DateTime]$Start = (Get-Date),
     
     [parameter(Mandatory=$false)]
-    [DateTime]$End = (Get-Date))
+    [DateTime]$End = (Get-Date),
+
+    [parameter(Mandatory=$false)]
+    [bool]$IncludeLinkedInstances
+
+    )
 
     # Get-WinEvent is performed through a remote powershell session to avoid firewall issues that arise from simply passing a computer name to Get-WinEvent  
-    Invoke-Command -Session $Session -ArgumentList $Query, $Log, $CopyAllProperties, $ByTime, $Start, $End -ScriptBlock {
+    Invoke-Command -Session $Session -ArgumentList $Query, $Log, $global:CONST_ADFS_AUDIT, $global:CONST_AUDITS_TO_AGGREGATE, $global:CONST_AUDITS_LINKED, $ByTime, $Start, $End -ScriptBlock {
         param(
         [string]$Query, 
         [string]$Log,
-        [bool]$CopyAllProperties,
+        [string]$providername,
+        [object]$auditsToAggregate,
+        [object]$auditsWithInstanceIds,
         [bool]$ByTime,
         [DateTime]$Start,
         [DateTime]$End)
@@ -100,6 +113,9 @@ function MakeQuery
 
         # TODO: Perform adjustment for time skew. Check the difference between the current UTC time on this machine,
         #  and the current UTC time on the target machine
+
+        # TODO: Consider checking audits on each machine to determine the behavior level, and then 
+        #  keep track of that for event parsing schema 
 
 
         #
@@ -115,7 +131,7 @@ function MakeQuery
             # Filtering based on time is more robust when using hashtable filters
             if ( $Log -eq "security" )
             {
-                $Result = Get-WinEvent -FilterHashtable @{logname = $Log; providername = $CONST_ADFS_AUDIT; starttime = $AdjustedStart; endtime = $AdjustedEnd} -ErrorAction SilentlyContinue
+                $Result = Get-WinEvent -FilterHashtable @{logname = $Log; providername = $providername; starttime = $AdjustedStart; endtime = $AdjustedEnd} -ErrorAction SilentlyContinue
             }
             else
             {
@@ -130,39 +146,34 @@ function MakeQuery
         #
         # Process results from Get-WinEvent query 
         #
-        
         $instanceIdsToQuery = @()
 
         foreach ( $Event in $Result )
         {
             # Copy over all properties so they remain accessible when remote session terminates
-            if ( $CopyAllProperties ) 
-            {
-                $Properties = @()
-                foreach ( $Property in $Event.Properties )
-                {
-                    # TODO: BUGBUG - do we need to call .value? Don't we want the full object?
-                    $Properties += $Property.value
-                }
-                $Event | Add-Member RemoteProperties $Properties
-            }
-            elseif ( $Log -eq $CONST_SECURITY_LOG ) # TODO: BUGBUG - why is this an elseif?
-            {
-                # Contains activity ID
-                if ( $Event.Properties.count -gt 0 )
-                {
-                    $guidRef = [ref] [System.Guid]::NewGuid()
-                    if ( [System.Guid]::TryParse( $Event.Properties[1].Value, $guidRef ) ) 
-                    {
-                        $Event | Add-Member CorrelationID $Event.Properties[1].Value 
-                    }
-                    else
-                    {
-                        # Ensure correlation id is not lost through the serialization process
-                        $Event | Add-Member CorrelationID $Event.Properties[0].Value 
 
-                        # TODO: BUGBUG: This will always be the instance ID. Instance ID and Correlation ID are not the same
-                    }
+            $Properties = @()
+            foreach ( $Property in $Event.Properties )
+            {
+                # TODO: BUGBUG - do we need to call .value? Don't we want the full object?
+                $Properties += $Property.value
+            }
+            $Event | Add-Member RemoteProperties $Properties
+            
+            # Contains activity ID
+            if ( $Event.Properties.count -gt 0 )
+            {
+                $guidRef = [ref] [System.Guid]::NewGuid()
+                if ( [System.Guid]::TryParse( $Event.Properties[1].Value, $guidRef ) ) 
+                {
+                    $Event | Add-Member CorrelationID $Event.Properties[1].Value 
+                }
+                else
+                {
+                    # Ensure correlation id is not lost through the serialization process
+                    $Event | Add-Member CorrelationID $Event.Properties[0].Value 
+
+                    # TODO: BUGBUG: This will always be the instance ID. Instance ID and Correlation ID are not the same
                 }
             }
             else
@@ -173,14 +184,14 @@ function MakeQuery
 
             # If we want to include events that are linked by the instance ID, we need to 
             #  generate a list of instance IDs to query on for the current server 
-            if ( $IncludeLinkedInstances )
+            if ( $IncludeLinkedInstances -or $true )
             {
                 if ( $Event.CorrelationID.length -ne 0 )
                 {
                     # We only want to collect linked instance data when the correlation ID was provided, 
                     #  otherwise the results could become too large 
 
-                    if ( $CONST_AUDITS_TO_AGGREGATE -contains $Event.Id )
+                     if ( $auditsToAggregate -contains $Event.Id )
                     {
                         # The instance ID in this event should be used to get more data
                         $instanceID = $Event.Properties[0].Value 
@@ -193,15 +204,15 @@ function MakeQuery
         #
         # If we have instance IDs to collect accross, do that collection now
         #
-        if ( $instanceIdsToQuery.count -gt 0 )
+        if ( $instanceIdsToQuery.Count -gt 0 )
         {
-            foreach ( $eventID in $CONST_AUDITS_LINKED )
+            foreach ( $eventID in $auditsWithInstanceIds )
             {
                 # Note: we can do this query for just the local server, because an instance ID will never be written cross-server
 
                 # TODO: BUGBUG: Adjust this to use (System/EventID=403 or System/EventID = 404) 
 
-                $instanceIdResultsRaw = Get-WinEvent -FilterHashtable @{logname = $Log; providername = $CONST_ADFS_AUDIT; Id = $eventID } -ErrorAction SilentlyContinue
+                $instanceIdResultsRaw = Get-WinEvent -FilterHashtable @{logname = $Log; providername = $providername; Id = $eventID } -ErrorAction SilentlyContinue
 
                 foreach ( $instanceID in $instanceIdsToQuery )
                 {
@@ -210,7 +221,7 @@ function MakeQuery
                         if ( $instanceID -eq $instanceEvent.Properties[0].Value )
                         {
                             # We have an event that we want 
-                            
+
                             # Copy data of remote params
                             $Properties = @()
                             foreach ( $Property in $instanceEvent.Properties )
@@ -218,6 +229,7 @@ function MakeQuery
                                 # TODO: BUGBUG - do we need to call .value? Don't we want the full object?
                                 $Properties += $Property.value
                             }
+
                             $instanceEvent | Add-Member RemoteProperties $Properties
                             $instanceEvent | Add-Member AdfsInstanceId $instanceEvent.Properties[0].Value
 
@@ -263,15 +275,15 @@ function GetSecurityEvents
 
     if ( $CorrID.length -eq 0 )
     {
-        $Query = "*[System[Provider[@Name='{0}' or @Name='{1}' or @Name='{2}']]]" -f $CONST_ADFS_ADMIN, $CONST_ADFS_AUDIT, $CONST_ADFS_DEBUG
+        $Query = "*[System[Provider[@Name='{0}' or @Name='{1}' or @Name='{2}']]]" -f $global:CONST_ADFS_ADMIN, $global:CONST_ADFS_AUDIT, $global:CONST_ADFS_DEBUG
     }
     else
     {
-        $Query = "*[System[Provider[@Name='{0}' or @Name='{1}' or @Name='{2}']]] and *[EventData[Data and (Data='{3}')]]" -f $CONST_ADFS_ADMIN, $CONST_ADFS_AUDIT, $CONST_ADFS_DEBUG, $CorrID
+        $Query = "*[System[Provider[@Name='{0}' or @Name='{1}' or @Name='{2}']]] and *[EventData[Data and (Data='{3}')]]" -f $global:CONST_ADFS_ADMIN, $global:CONST_ADFS_AUDIT, $global:CONST_ADFS_DEBUG, $CorrID
     }
 
     # Perform the log query 
-    $result = MakeQuery -Query $Query -Log $CONST_SECURITY_LOG -Session $Session -ByTime $ByTime -Start $Start -End $End -IncludeLinkedInstances
+    return MakeQuery -Query $Query -Log $global:CONST_SECURITY_LOG -Session $Session -ByTime $ByTime -Start $Start -End $End -IncludeLinkedInstances $IncludeLinkedInstances
 }
 
 function GetAdminEvents
@@ -308,7 +320,7 @@ function GetAdminEvents
         $Query =  "*[System[Correlation[@ActivityID='{$CorrID}']]]"
     }
 
-    MakeQuery -Query $Query -Log $CONST_ADMIN_LOG -Session $Session -ByTime $ByTime -Start $Start -End $End
+    return MakeQuery -Query $Query -Log $global:CONST_ADMIN_LOG -Session $Session -ByTime $ByTime -Start $Start -End $End
 }
 
 function GetDebugEvents
@@ -345,7 +357,7 @@ function GetDebugEvents
         $Query =  "*[System[Correlation[@ActivityID='{$CorrID}']]]"
     }
 
-    MakeQuery -Query $Query -Log $CONST_DEBUG_LOG -Session $Session -ByTime $ByTime -Start $Start -End $End
+    return MakeQuery -Query $Query -Log $global:CONST_DEBUG_LOG -Session $Session -ByTime $ByTime -Start $Start -End $End
 }
 
 function QueryDesiredLogs
@@ -381,30 +393,23 @@ function QueryDesiredLogs
 
     $Events = @()
 
-    if ($Logs -contains $CONST_LOG_PARAM_SECURITY)
+    if ($Logs -contains $global:CONST_LOG_PARAM_SECURITY)
     {
         $Events += GetSecurityEvents -CorrID $CorrID -Session $Session -ByTime $ByTime -Start $Start -End $End -IncludeLinkedInstances $IncludeLinkedInstances
     }
 
-    if ($Logs -contains $CONST_LOG_PARAM_DEBUG)
+    if ($Logs -contains $global:CONST_LOG_PARAM_DEBUG)
     {
         $Events += GetDebugEvents -CorrID $CorrID -Session $Session -ByTime $ByTime -Start $Start -End $End
     }
 
-    if ($Logs -contains $CONST_LOG_PARAM_ADMIN)
+    if ($Logs -contains $global:CONST_LOG_PARAM_ADMIN)
     {
         $Events += GetAdminEvents -CorrID $CorrID -Session $Session -ByTime $ByTime -Start $Start -End $End
     }
 
     return $Events
 }
-
-
-
-
-
-
-
 
 
 
@@ -419,37 +424,35 @@ function QueryDesiredLogs
 
 function LoadJson
 {
-    $REQUEST_OBJ_TEMPLATE = Get-Content -Raw -Path "data_templates/requestObjTemplate.json"
-    $RESPONSE_OBJ_TEMPLATE = Get-Content -Raw -Path "data_templates/responseObjTemplate.json"
-    $ANALYSIS_OBJ_TEMPLATE = Get-Content -Raw -Path "data_templates/analysisObjTemplate.json"
-    $ERROR_OBJ_TEMPLATE = Get-Content -Raw -Path "data_templates/errorObjTemplate.json"
-    $TIMELINE_OBJ_TEMPLATE = Get-Content -Raw -Path "data_templates/timelineObjTemplate.json"
-    $TOKEN_OBJ_TEMPLATE = Get-Content -Raw -Path "data_templates/tokenObjTemplate.json"
-    $DidLoadJson = $true
+    $global:REQUEST_OBJ_TEMPLATE = Get-Content -Raw -Path "data_templates/requestObjTemplate.json"
+    $global:RESPONSE_OBJ_TEMPLATE = Get-Content -Raw -Path "data_templates/responseObjTemplate.json"
+    $global:ANALYSIS_OBJ_TEMPLATE = Get-Content -Raw -Path "data_templates/analysisObjTemplate.json"
+    $global:ERROR_OBJ_TEMPLATE = Get-Content -Raw -Path "data_templates/errorObjTemplate.json"
+    $global:TIMELINE_OBJ_TEMPLATE = Get-Content -Raw -Path "data_templates/timelineObjTemplate.json"
+    $global:TOKEN_OBJ_TEMPLATE = Get-Content -Raw -Path "data_templates/tokenObjTemplate.json"
+    $global:DidLoadJson = $true
 }
 
 function NewObjectFromTemplate
 {
     param(
         [parameter(Mandatory=$true)]
-        [ValidateNotNullOrEmpty()]
         [string]$Template
     )
 
-    if ($DidLoadJson -eq $false)
+    if ($global:DidLoadJson -eq $false)
     {
         LoadJson
 
-        if ($DidLoadJson -eq $false)
+        if ($global:DidLoadJson -eq $false)
         {
             Write-Error "Failed to load data templates. Could not create a new JSON object."
             return
         }
-    }
+    }   
 
-    return $template | ConvertFrom-Json
+    return $Template | ConvertFrom-Json
 }
-
 
 
 
@@ -469,22 +472,136 @@ function Process-HeadersFromEvent
         [object]$events
     )
 
+    $longText = ""
     foreach ( $event in $events )
     {
         if ( $event.Id -eq 510 )
         {
             # 510 events are generic "LongText" events. When the LongText that's being 
             #  written is header data (from a 403 or 404), then the schema is: 
-            #      instanceID : $event.Properties[0]
-            #      headers_json : $event.Properties[1] (ex. {"Content-Length":"89","Content-Type":"application/x-www-form-urlencoded", etc. } )
-            #      empty : all other fields 
+            #      instanceID : $event.RemoteProperties[0]
+            #      headers_json : $event.RemoteProperties[1...N] (ex. {"Content-Length":"89","Content-Type":"application/x-www-form-urlencoded", etc. } )
 
-            # Note: we return on the first find, because there should only ever be one 510 headers event per 403 request and 
-            #  one 510 headers event per 404 response
-            return $event.Properties[1] | ConverFrom-Json
+            for ( $i=1; $i -le $event.RemoteProperties.Count - 1; $i++ )
+            {
+                $propValue = $event.RemoteProperties[$i]
+
+                if ( $propValue -ne "-")
+                {
+                    $longText += $propValue
+                }                
+            }
         }
     }
+
+    return $longText | ConvertFrom-Json
 }
+
+function Get-ClaimsFromEvent
+{
+    param(
+        [parameter(Mandatory=$true)]
+        [object]$event
+    )
+
+    $keyValuePair = @()
+    for ($i = 1; $i -lt $event.RemoteProperties.Count - 1; $i += 2)
+    {
+        if ($event.RemoteProperties[$i] -ne "-" -and $event.RemoteProperties[$i + 1] -ne "-" )
+        {
+            $keyValuePair += @($event.RemoteProperties[$i], $event.RemoteProperties[$i + 1])
+        }
+    }
+
+    return $keyValuePair
+}
+
+function Process-TokensFromEvent
+{
+    param(
+        [parameter(Mandatory=$true)]
+        [object]$event,
+
+        [parameter(Mandatory=$false)]
+        [object]$LinkedEvents
+    )
+
+    $allTokens = @()
+
+    if ( $event.Id -eq 412)
+    {
+        $tokenObj = NewObjectFromTemplate -Template $global:TOKEN_OBJ_TEMPLATE
+        $claims = @()
+        foreach ( $linkedEvent in $LinkedEvents[$event.RemoteProperties[0]] ) #InstanceID
+        {
+            # Get claims out of event
+            $claims += Get-ClaimsFromEvent -event $linkedEvent
+        }
+
+        $tokenObj.type = $event.RemoteProperties[2]
+        $tokenObj.rp = $event.RemoteProperties[3]
+        $tokenObj.direction = "incoming"
+        $tokenObj.claims = $claims
+
+        $allTokens += $tokenObj
+    }
+
+    if ( $event.Id -eq 324 )
+    {
+        $tokenObj = NewObjectFromTemplate -Template $global:TOKEN_OBJ_TEMPLATE
+        $claims = @()
+        foreach ( $linkedEvent in $LinkedEvents[$event.RemoteProperties[0]] ) #InstanceID
+        {
+            # Get claims out of token 
+            $claims += Get-ClaimsFromEvent -event $linkedEvent
+        }
+
+        $tokenObj.user = $event.RemoteProperties[2]
+        $tokenObj.rp = $event.RemoteProperties[3]
+        $tokenObj.direction = "incoming"
+        $tokenObj.claims = $claims
+
+        $allTokens += $tokenObj
+    }
+
+    if ( $event.Id -eq 299 )
+    {
+        $tokenObjIn = NewObjectFromTemplate -Template $global:TOKEN_OBJ_TEMPLATE
+        $tokenObjOut = NewObjectFromTemplate -Template $global:TOKEN_OBJ_TEMPLATE
+
+        $claimsIn = @()
+        $claimsOut = @()
+
+        foreach ( $linkedEvent in $LinkedEvents[$event.RemoteProperties[0]] ) #InstanceID
+        {
+            if ( $linkedEvent.Id -eq 500 )
+            {
+                # Issued claims
+                $claimsOut += Get-ClaimsFromEvent -event $linkedEvent
+            }
+
+            if ( $linkedEvent.Id -eq 501 )
+            {
+                # Caller claims
+                $claimsIn += Get-ClaimsFromEvent -event $linkedEvent
+            }
+
+            # Get claims out of token 
+        }
+
+        $tokenObjOut.rp = $event.RemoteProperties[2]
+        $tokenObjOut.direction = "outgoing"
+
+        $tokenObjIn.claims = $claimsIn
+        $tokenObjOut.claims = $claimsOut
+
+        $allTokens += $tokenObjIn
+        $allTokens += $tokenObjOut
+    }
+
+    return $allTokens
+}
+
 
 function Generate-ErrorEvent
 {
@@ -493,7 +610,7 @@ function Generate-ErrorEvent
         [object]$event
     )
 
-    $errorObj = NewObjectFromTemplate -Template $ERROR_OBJ_TEMPLATE
+    $errorObj = NewObjectFromTemplate -Template $global:ERROR_OBJ_TEMPLATE
     $errorObj.time = $event.TimeCreated
     $errorObj.eventid = $event.Id
     $errorObj.message = $event.Message
@@ -515,7 +632,7 @@ function Generate-ResponseEvent
         [object]$LinkedEvents
     )
 
-    $response = NewObjectFromTemplate -Template $RESPONSE_OBJ_TEMPLATE
+    $response = NewObjectFromTemplate -Template $global:RESPONSE_OBJ_TEMPLATE
     $response.num = $requestCount
 
     # Return an empty response object if we don't have data to use 
@@ -524,11 +641,11 @@ function Generate-ResponseEvent
         return $response
     }
 
-    $response.time = $event.Properties[2] #Datetime
+    $response.time = $event.RemoteProperties[2] #Datetime
     # "{Status code} {status_description}""
-    $response.result = "{0} {1}" -f $event.Properties[3], $event.Properties[4] 
-            
-    $headerEvent = $LinkedEvents[$event.Properties[0]] #InstanceID
+    $response.result = "{0} {1}" -f $event.RemoteProperties[3], $event.RemoteProperties[4] 
+
+    $headerEvent = $LinkedEvents[$event.RemoteProperties[0]] #InstanceID
     $headersObj = Process-HeadersFromEvent -events $headerEvent
     $response.headers = $headersObj
 
@@ -552,57 +669,80 @@ function Generate-RequestEvent
     # TODO: This is the schema for ADFS 2016
     # Need to adjust for 2012R2 
 
-    # Un-used data from event 
-    #$event.Properties[7]  #LocalPort
-    #$event.Properties[8]  #LocalIP
-    #$event.Properties[11]  #Caller Identity
-    #$event.Properties[12]  #Cert identity
-    #$event.Properties[13]  #RP
-    #$event.Properties[14]  #ThroughProxy
-    #$event.Properties[15]  #Proxy DNS
-
-    $currentRequest = NewObjectFromTemplate -Template $REQUEST_OBJ_TEMPLATE
+    $currentRequest = NewObjectFromTemplate -Template $global:REQUEST_OBJ_TEMPLATE
     $currentRequest.num = $requestCount
 
     # Return an empty request object if we don't have data to use 
-    if ( $event.length -eq 0 )
+    if ( -not $event )
     {
         return $currentRequest
     }
 
-    $currentRequest.time = $event.Properties[2]  #Date
-    $currentRequest.clientip = $event.Properties[3]  #ClientIP
-    $currentRequest.method = $event.Properties[4]  #HTTP_Method
-    $currentRequest.url = $event.Properties[5]  #URL
-    $currentRequest.query = $event.Properties[6]  #QueryString
-    $currentRequest.useragent = $event.Properties[9]  #UserAgent
-    $currentRequest.contlen = $event.Properties[10]  #ContentLength
+    $currentRequest.time = $event.RemoteProperties[2]  #Date
+    $currentRequest.clientip = $event.RemoteProperties[3]  #ClientIP
+    $currentRequest.method = $event.RemoteProperties[4]  #HTTP_Method
+    $currentRequest.url = $event.RemoteProperties[5]  #URL
+    $currentRequest.query = $event.RemoteProperties[6]  #QueryString
+    $currentRequest.useragent = $event.RemoteProperties[9]  #UserAgent
+    $currentRequest.contlen = $event.RemoteProperties[10]  #ContentLength
     $currentRequest.server = $event.MachineName
 
-    $headerEvent = $LinkedEvents[$event.Properties[0]] #InstanceID
+    $headerEvent = $LinkedEvents[$event.RemoteProperties[0]] #InstanceID
     $headersObj = Process-HeadersFromEvent -events $headerEvent
     $currentRequest.headers = $headersObj
 
     # Load the HTTP and HTTPS ports, if we haven't already 
     # We need these to convert the 'LocalPort' field in the 403 audit
-    if (-not $DidLoadPorts)
+    if (-not $global:DidLoadPorts)
     {
-        $CONST_ADFS_HTTP_PORT = (Get-AdfsProperties).HttpPort
-        $CONST_ADFS_HTTPS_PORT = (Get-AdfsProperties).HttpsPort
-        $DidLoadPorts = $true 
+        $global:CONST_ADFS_HTTP_PORT = (Get-AdfsProperties).HttpPort
+        $global:CONST_ADFS_HTTPS_PORT = (Get-AdfsProperties).HttpsPort
+        $global:DidLoadPorts = $true 
     }
              
-    if ( $event.Properties[7] -eq $CONST_ADFS_HTTP_PORT)
+    if ( $event.RemoteProperties[7] -eq $global:CONST_ADFS_HTTP_PORT)
     {
         $currentRequest.protocol = "HTTP"
     }
 
-    if ( $event.Properties[7] -eq $CONST_ADFS_HTTPS_PORT)
+    if ( $event.RemoteProperties[7] -eq $global:CONST_ADFS_HTTPS_PORT)
     {
         $currentRequest.protocol = "HTTPS"
     }
 
-    return $request 
+    return $currentRequest 
+}
+
+function Update-ResponseEvent
+{
+    param(
+        [parameter(Mandatory=$false)]
+        [object]$event,
+
+        [parameter(Mandatory=$true)]
+        [object]$responseEvent,
+
+        [parameter(Mandatory=$false)]
+        [object]$LinkedEvents
+    )
+
+    if ( $event.Id -eq 404 )
+    {
+        $responseEvent.time = $event.RemoteProperties[2] #Datetime
+        # "{Status code} {status_description}""
+        $responseEvent.result = "{0} {1}" -f $event.RemoteProperties[3], $event.RemoteProperties[4] 
+
+        $headerEvent = $LinkedEvents[$event.RemoteProperties[0]] #InstanceID
+        $headersObj = Process-HeadersFromEvent -events $headerEvent
+        $responseEvent.headers = $headersObj
+
+        return $responseEvent
+    }
+
+    if ( $event.Id -eq 299 )
+    {
+
+    }
 }
 
 function Generate-TimelineEvent
@@ -612,52 +752,52 @@ function Generate-TimelineEvent
         [object]$event
     )
 
-    $timelineEvent = NewObjectFromTemplate -Template $TIMELINE_OBJ_TEMPLATE
+    $timelineEvent = NewObjectFromTemplate -Template $global:TIMELINE_OBJ_TEMPLATE
     $timelineEvent.time = $event.TimeCreated
     
     # 403 - request received
     if ( $event.Id -eq 403 )
     {
-        $timelineEvent.type = $TIMELINE_INCOMING
-        $timelineEvent.result = $TIMELINE_SUCCESS
+        $timelineEvent.type = $global:TIMELINE_INCOMING
+        $timelineEvent.result = $global:TIMELINE_SUCCESS
         return $timelineEvent
     }       
     
     # 411 - token validation failure 
     if ( $event.Id -eq 411 )
     {    
-        $timelineEvent.type = $TIMELINE_AUTHENTICATION
-        $timelineEvent.result = $TIMELINE_FAILURE
-        $timelineEvent.tokentype = $event.Properties[1] #Token Type
+        $timelineEvent.type = $global:TIMELINE_AUTHENTICATION
+        $timelineEvent.result = $global:TIMELINE_FAILURE
+        $timelineEvent.tokentype = $event.RemoteProperties[1] #Token Type
         return $timelineEvent
     }
 
     # 412 - authentication success 
     if ( $event.Id -eq 412 )
     {
-        $timelineEvent.type = $TIMELINE_AUTHENTICATION
-        $timelineEvent.result = $TIMELINE_SUCCESS
-        $timelineEvent.tokentype = $event.Properties[2] #Token Type
-        $timelineEvent.rp = $event.Properties[3] #RP
+        $timelineEvent.type = $global:TIMELINE_AUTHENTICATION
+        $timelineEvent.result = $global:TIMELINE_SUCCESS
+        $timelineEvent.tokentype = $event.RemoteProperties[2] #Token Type
+        $timelineEvent.rp = $event.RemoteProperties[3] #RP
         return $timelineEvent
     }
 
     # 324 - authorization failure 
     if ( $event.Id -eq 324 )
     {
-        $timelineEvent.type = $TIMELINE_AUTHORIZATION
-        $timelineEvent.result = $TIMELINE_FAILURE
-        $timelineEvent.rp = $event.Properties[3] #RP
+        $timelineEvent.type = $global:TIMELINE_AUTHORIZATION
+        $timelineEvent.result = $global:TIMELINE_FAILURE
+        $timelineEvent.rp = $event.RemoteProperties[3] #RP
         return $timelineEvent
     }
 
     # 299 - token issuance success
     if ( $event.Id -eq 299 )
     {
-        $timelineEvent.type = $TIMELINE_ISSUANCE
-        $timelineEvent.result = $TIMELINE_SUCCESS
-        $timelineEvent.rp = $event.Properties[2] #RP
-        $timelineEvent.tokentype = $TOKEN_TYPE_ACCESS
+        $timelineEvent.type = $global:TIMELINE_ISSUANCE
+        $timelineEvent.result = $global:TIMELINE_SUCCESS
+        $timelineEvent.rp = $event.RemoteProperties[2] #RP
+        $timelineEvent.tokentype = $global:TOKEN_TYPE_ACCESS
         return $timelineEvent
     }
 
@@ -673,19 +813,16 @@ function Process-EventsForAnalysis
 
     # TODO: Validate that all events have the same correlation ID, or no correlation ID 
 
-    # TODO: Validate that the events are sorted by time 
+    # Validate that the events are sorted by time 
+    $events = $events | Sort-Object TimeCreated 
 
-    $currentRequest = $null
-    $requestCount = -1
-
-    $allRequests = @()
-    $allResponses = @()
+    $requestCount = 0
+    $mapRequestNumToObjects = @{} 
     $allErrors = @()
     $allTimeline = @()
-
     $timelineIncomingMarked = $false
-
     $LinkedEvents = @{}
+
     # Do a pre-pass through the events set to generate 
     #  a hashtable of instance IDs to their events 
     foreach ( $event in $events )
@@ -718,7 +855,7 @@ function Process-EventsForAnalysis
         }
 
         # If this event signals a timeline event, generate it 
-        if ( $event.Id -in $CONST_TIMELINE_AUDITS)
+        if ( $event.Id -in $global:CONST_TIMELINE_AUDITS)
         {
             if( $event.Id -ne 403 -or -not $timelineIncomingMarked )
             {
@@ -730,89 +867,86 @@ function Process-EventsForAnalysis
         # 411 - token validation failure 
         if ( $event.Id -eq 411 )
         {
-            #$event.Properties[2] #Client IP
-            #$event.Properties[3] #Error message
-            #$event.Properties[4] #Error details
+            # TODO: Use for error 
         }
 
-        # 412 - authentication success 
-        if ( $event.Id -eq 412 )
+        # 412 - authentication success or 324 - authorization failure 
+        if ( $event.Id -eq 412 -or $event.Id -eq 324 )
         {
-            # Use this for caller identity on request object 
+            # Use this for caller identity on request object            
+            $tokenObj = Process-TokensFromEvent -event $event -LinkedEvents $LinkedEvents
+            $tokenObj[0].num = $requestCount  
 
-            $event.Properties[0] #InstanceID
-        }
-
-        # 324 - authorization failure 
-        if ( $event.Id -eq 324 )
-        {
-            $event.Properties[0] #InstanceID
+            $currentRequest = $mapRequestNumToObjects[$requestCount][0] 
+            $currentRequest.tokens += $tokenObj[0]
         }
 
         # 299 - token issuance success
         if ( $event.Id -eq 299 )
         {
-            $event.Properties[0] #InstanceID
+            $tokenObj = Process-TokensFromEvent -event $event -LinkedEvents $LinkedEvents
+            $tokenObj[0].num = $requestCount  
+            $tokenObj[1].num = $requestCount
+
+            $currentRequest = $mapRequestNumToObjects[$requestCount][0] 
+            $currentRequest.tokens += $tokenObj[0]
+
+            $currentResponse = $mapRequestNumToObjects[$requestCount][1] 
+            $currentResponse.tokens += $tokenObj[1]
         }
 
         # 403 - request received
         if ( $event.Id -eq 403 )
         {
+            # We have a new request, so generate a request/response pair, and store it 
 
-            # We should generate a request/response pair every time we get a 403
-            #  and then proceed to fill both as we come accross more audits 
-
-            if ( $currentRequest -ne $null )
+            if ( $mapRequestNumToObjects[$requestCount] -ne $null -and $mapRequestNumToObjects[$requestCount].Count -gt 0 )
             {
-                # We already have a request in progress when a new request came in. 
-                #  This is due to an ADFS logging bug, which doesn't always return a 404
-                #  We will just generate a response and add it 
-
-                $response = NewObjectFromTemplate -Template $RESPONSE_OBJ_TEMPLATE
-                $response.num = $requestCount 
-
-                # TODO: Decide how to handle this, since we might still be able to get headers, tokens
-
-                $allRequests += $currentRequest
-                $allResponses += $response
-                $currentRequest = $null
+                # We have a previous request in the pipeline. Finalize that request
+                $requestCount += 1
             }
-
-            $requestCount += 1
-            $currentRequest = Generate-RequestEvent -event $event -requestCount $requestCount -LinkedEvents $LinkedEvents 
             
-
-            # TODO: BUGBUG - figure out how to get incoming tokens to add to the request object 
-            #$currentRequest.tokens
+            $currentRequest = Generate-RequestEvent -event $event -requestCount $requestCount -LinkedEvents $LinkedEvents
+            $currentResponse = Generate-ResponseEvent -requestCount $requestCount
+            $mapRequestNumToObjects[$requestCount] = @($currentRequest, $currentResponse)
         }
         
         # 404 - response sent 
         if ( $event.Id -eq 404 )
         {
-            if ( $currentRequest -eq $null ){
-                # We do not have a request in progress, but we are responding 
-                #  This should never happen, but if it does, we will just generate
-                #  a request and add it
-
-                $request = NewObjectFromTemplate -Template $REQUEST_OBJ_TEMPLATE
-                $requestCount += 1
-                $request.num = $requestCount 
-
-                $allRequests += $currentRequest
-                $currentRequest = $null
+            if ( $mapRequestNumToObjects[$requestCount] -eq $null -or $mapRequestNumToObjects[$requestCount].Count -eq 0 )
+            {
+                # We have a response, but no request yet. Create the request/response pair 
+                $currentRequest = Generate-RequestEvent -requestCount $requestCount
+                $currentResponse = Generate-ResponseEvent -event $event -requestCount $requestCount -LinkedEvents $LinkedEvents 
+                $mapRequestNumToObjects[$requestCount] = @($currentRequest, $currentResponse)
+                #$requestCount += 1
+            }
+            else
+            {
+                $currentResponse = $mapRequestNumToObjects[$requestCount][1]
+                $updatedResponse = Update-ResponseEvent -event $event -responseEvent $currentResponse -LinkedEvents $LinkedEvents 
+                $mapRequestNumToObjects[$requestCount][1] = $updatedResponse
             }
 
-            $response = Generate-ResponseEvent -event $event -requestCount $requestCount -LinkedEvents $LinkedEvents 
-            $event.Properties[0] #InstanceID
-
-            #$response.tokens
+            # We do not mark a request/response pair as complete until we have a new request come in, 
+            #  since we sometimes see events after the 404 (token issuance, etc.) 
         }
     }
 
     #
     # Generate the complete analysis JSON object 
-    #
-    $analysisObj = NewObjectFromTemplate -Template $ANALYSIS_OBJ_TEMPLATE
+    #    
+    $analysisObj = NewObjectFromTemplate -Template $global:ANALYSIS_OBJ_TEMPLATE
+
+    $allRequests = @()
+    $allResponses = @()
+    foreach ( $requestKey in $mapRequestNumToObjects.keys )
+    {
+        $allRequests += $mapRequestNumToObjects[$requestKey][0]
+        $allResponses += $mapRequestNumToObjects[$requestKey][1]
+    } 
+
     $analysisObj.requests = $allRequests
     $analysisObj.responses = $allResponses
     $analysisObj.errors = $allErrors
@@ -820,6 +954,7 @@ function Process-EventsForAnalysis
 
     return $analysisObj
 }
+
 
 
 
@@ -942,6 +1077,7 @@ function Get-ADFSEvents
     )
 
     # TODO: Add support for querying * for Servers, if environment is Win2016
+    # (Get-AdfsFarmInformation).FarmNodes
   
     $ServerList = @()
     
@@ -973,15 +1109,34 @@ function Get-ADFSEvents
         $StartTime = Get-Date
         $EndTime = Get-Date
     }
+
+    if ( $CreateAnalysisData )
+    {
+        if ($global:DidLoadJson -eq $false)
+        {
+            LoadJson
+
+            if ($global:DidLoadJson -eq $false)
+            {
+                Write-Error "Failed to load data templates. Creating JSON objects will likely fail."
+            }
+        } 
+    }
     
     # Iterate through each server, and collect the required logs
     foreach ( $Machine in $Server )
     {
         $Events = @()
+        $includeLinks = $false
+        if ( $CreateAnalysisData )
+        {
+            $includeLinks = $true
+        }
+
         Try
         {
             $Session = New-PSSession -ComputerName $Machine
-            $Events += QueryDesiredLogs -CorrID $CorrelationID -Session $Session -ByTime $ByTime -Start $StartTime.ToUniversalTime() -End $EndTime.ToUniversalTime() -IncludeLinkedInstances
+            $Events += QueryDesiredLogs -CorrID $CorrelationID -Session $Session -ByTime $ByTime -Start $StartTime.ToUniversalTime() -End $EndTime.ToUniversalTime() -IncludeLinkedInstances $includeLinks
         }
         Catch
         {
@@ -1023,6 +1178,7 @@ function Get-ADFSEvents
     if ( $CreateAnalysisData )
     {
         $dataObj = Process-EventsForAnalysis -events $Events
+        return $dataObj
     }
 }
 
