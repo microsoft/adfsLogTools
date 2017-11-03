@@ -1076,9 +1076,17 @@ function Get-ADFSEvents
     [string[]]$Server="LocalHost"
     )
 
-    # TODO: Add support for querying * for Servers, if environment is Win2016
-    # (Get-AdfsFarmInformation).FarmNodes
-  
+    # TODO: Add warning if environment is not Win2016
+    if ($Server -eq "*")
+    {
+        $Server = @()
+        $nodes = (Get-AdfsFarmInformation).FarmNodes
+        foreach( $server in $nodes)
+        {
+            $Server += $server
+        }
+    }
+    
     $ServerList = @()
     
     # Validate Correlation ID is a valid GUID
