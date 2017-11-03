@@ -955,6 +955,31 @@ function Process-EventsForAnalysis
     return $analysisObj
 }
 
+function AggregateOutputObject
+{
+    param(
+    [parameter(Mandatory=$true, Position=0)]
+    [ValidateNotNullOrEmpty()]
+    [string]$CorrID,
+
+    [parameter(Mandatory=$true,Position=1)]
+    [AllowEmptyCollection()]
+    [PSObject[]]$Events,
+
+    [parameter(Mandatory=$true,Position=2)]
+    [AllowEmptyCollection()]
+    [PSObject]$Data)
+
+     $Output = New-Object PSObject -Property @{
+        "CorrelationID" = $CorrID
+        "Events" = $Events
+        "AnalysisData" = $Data
+    }
+
+    Write-Output $Output
+    return $Output
+}
+
 
 
 
@@ -1073,7 +1098,10 @@ function Get-ADFSEvents
     [switch]$CreateAnalysisData,
 
     [parameter(Mandatory=$false, ValueFromPipeline=$True, ValueFromPipelineByPropertyName=$True)]
-    [string[]]$Server="LocalHost"
+    [string[]]$Server="LocalHost",
+
+    [parameter(Mandatory=$false, ValueFromPipeline=$True, ValueFromPipelineByPropertyName=$True)]
+    [string]$FilePath
     )
 
     # TODO: Add warning if environment is not Win2016
@@ -1183,11 +1211,13 @@ function Get-ADFSEvents
         }
     }
 
+    $dataObj = $null
     if ( $CreateAnalysisData )
     {
         $dataObj = Process-EventsForAnalysis -events $Events
-        return $dataObj
     }
+
+    return AggregateOutputObject -Data $dataObj -Events $EventsByCorrId[$CorrelationID] -CorrID $CorrelationID
 }
 
 #
