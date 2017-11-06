@@ -19,14 +19,11 @@ $global:CONST_LOG_PARAM_SECURITY = "security"
 $global:CONST_LOG_PARAM_ADMIN = "admin"
 $global:CONST_LOG_PARAM_DEBUG = "debug"
 
-$global:CONST_QUERY_EVENTID = "System/EventID"
-$global:CONST_QUERY_OR_JOIN = " or " 
-
 $global:CONST_AUDITS_TO_AGGREGATE = @( "299", "324", "403", "404", "411", "412")
 $global:CONST_AUDITS_LINKED = @(500, 501, 502, 503, 510)
 $global:CONST_TIMELINE_AUDITS = @(299, 324, 403, 411, 412)
 
-# TODO: PowerShell is absolute garbage at JSON objects. Headers should be {}. 
+# TODO: PowerShell is not good with JSON objects. Headers should be {}. 
 
 $global:REQUEST_OBJ_TEMPLATE = '{"num": 0,"time": "1/1/0001 12:00:00 AM","protocol": "","host": "","method": "","url": "","query": "","useragent": "","server": "","clientip": "","contlen": 0,"headers": [],"tokens": [],"ver": "1.0"}'
 $global:RESPONSE_OBJ_TEMPLATE = '{"num": 0,"time": "1/1/0001 12:00:00 AM","result": "","headers": {},"tokens": [],"ver": "1.0"}'
@@ -82,7 +79,7 @@ function MakeQuery
     [System.Management.Automation.Runspaces.PSSession]$Session,
 
     [parameter(Mandatory=$false)]
-    [switch]$CopyAllProperties,
+    [string]$FilePath,
 
     [parameter(Mandatory=$false)]
     [bool]$ByTime,
@@ -99,7 +96,7 @@ function MakeQuery
     )
 
     # Get-WinEvent is performed through a remote powershell session to avoid firewall issues that arise from simply passing a computer name to Get-WinEvent  
-    Invoke-Command -Session $Session -ArgumentList $Query, $Log, $global:CONST_ADFS_AUDIT, $global:CONST_AUDITS_TO_AGGREGATE, $global:CONST_AUDITS_LINKED, $ByTime, $Start, $End -ScriptBlock {
+    Invoke-Command -Session $Session -ArgumentList $Query, $Log, $global:CONST_ADFS_AUDIT, $global:CONST_AUDITS_TO_AGGREGATE, $global:CONST_AUDITS_LINKED, $ByTime, $Start, $End, $FilePath -ScriptBlock {
         param(
         [string]$Query, 
         [string]$Log,
@@ -108,7 +105,8 @@ function MakeQuery
         [object]$auditsWithInstanceIds,
         [bool]$ByTime,
         [DateTime]$Start,
-        [DateTime]$End)
+        [DateTime]$End,
+        [string]$FilePath)
 
 
         # TODO: Perform adjustment for time skew. Check the difference between the current UTC time on this machine,
@@ -117,11 +115,14 @@ function MakeQuery
         # TODO: Consider checking audits on each machine to determine the behavior level, and then 
         #  keep track of that for event parsing schema 
 
-
         #
         # Perform Get-WinEvent call to collect logs 
         #
-        if ( $ByTime )
+        if ( $FilePath.Length -gt 0 )
+        {   
+            $Result = Get-WinEvent -Path $FilePath -FilterXPath $Query -ErrorAction SilentlyContinue -Oldest
+        }
+        elseif ( $ByTime )
         {
             # Adjust times for zone on specific server
             $TimeZone = [System.TimeZoneInfo]::Local
@@ -206,36 +207,63 @@ function MakeQuery
         #
         if ( $instanceIdsToQuery.Count -gt 0 )
         {
+            $eventIdString = ""
             foreach ( $eventID in $auditsWithInstanceIds )
             {
-                # Note: we can do this query for just the local server, because an instance ID will never be written cross-server
-
-                # TODO: BUGBUG: Adjust this to use (System/EventID=403 or System/EventID = 404) 
-
-                $instanceIdResultsRaw = Get-WinEvent -FilterHashtable @{logname = $Log; providername = $providername; Id = $eventID } -ErrorAction SilentlyContinue
-
-                foreach ( $instanceID in $instanceIdsToQuery )
+                if ( $eventIdString.Length -gt 0)
                 {
-                    foreach ( $instanceEvent in $instanceIdResultsRaw)
+                    $eventIdString += " or "
+                }
+
+                $eventIdString += "EventID={0}" -f $eventID
+            }
+
+            $queryString = ""
+            if ( $ByTime ){
+                $queryString = "*[System[Provider[@Name='{0}'] and ({1}) and TimeCreated[@SystemTime>='{2}' and @SystemTime<='{3}']]]" -f $providername, $eventIdString, $Start, $End
+            }
+            else
+            {
+                $queryString = "*[System[Provider[@Name='{0}'] and ({1})]]" -f $providername, $eventIdString
+            }
+
+            # Note: we can do this query for just the local server, because an instance ID will never be written cross-server
+
+            Write-Host $queryString
+
+            $instanceIdResultsRaw = $null
+            if ( $FilePath )
+            {
+                $instanceIdResultsRaw = Get-WinEvent -FilterXPath $queryString -ErrorAction SilentlyContinue -Path $FilePath
+            }
+            else
+            {
+                $instanceIdResultsRaw = Get-WinEvent -FilterXPath $queryString -ErrorAction SilentlyContinue
+            }
+
+            Write-Host $instanceIdResultsRaw.Count
+            
+            foreach ( $instanceID in $instanceIdsToQuery )
+            {
+                foreach ( $instanceEvent in $instanceIdResultsRaw)
+                {
+                    if ( $instanceID -eq $instanceEvent.Properties[0].Value )
                     {
-                        if ( $instanceID -eq $instanceEvent.Properties[0].Value )
+                        # We have an event that we want 
+
+                        # Copy data of remote params
+                        $Properties = @()
+                        foreach ( $Property in $instanceEvent.Properties )
                         {
-                            # We have an event that we want 
+                            # TODO: BUGBUG - do we need to call .value? Don't we want the full object?
+                            $Properties += $Property.value
+                        }
 
-                            # Copy data of remote params
-                            $Properties = @()
-                            foreach ( $Property in $instanceEvent.Properties )
-                            {
-                                # TODO: BUGBUG - do we need to call .value? Don't we want the full object?
-                                $Properties += $Property.value
-                            }
+                        $instanceEvent | Add-Member RemoteProperties $Properties
+                        $instanceEvent | Add-Member AdfsInstanceId $instanceEvent.Properties[0].Value
 
-                            $instanceEvent | Add-Member RemoteProperties $Properties
-                            $instanceEvent | Add-Member AdfsInstanceId $instanceEvent.Properties[0].Value
-
-                            $Result += $instanceEvent
-                        }                    
-                    }
+                        $Result += $instanceEvent
+                    }                    
                 }
             }
         }
@@ -271,7 +299,12 @@ function GetSecurityEvents
     [DateTime]$End,
 
     [parameter(Mandatory=$false)]
-    [bool]$IncludeLinkedInstances)
+    [bool]$IncludeLinkedInstances,
+
+    [parameter(Mandatory=$false)]
+    [string]$FilePath
+
+    )
 
     if ( $CorrID.length -eq 0 )
     {
@@ -283,7 +316,7 @@ function GetSecurityEvents
     }
 
     # Perform the log query 
-    return MakeQuery -Query $Query -Log $global:CONST_SECURITY_LOG -Session $Session -ByTime $ByTime -Start $Start -End $End -IncludeLinkedInstances $IncludeLinkedInstances
+    return MakeQuery -Query $Query -Log $global:CONST_SECURITY_LOG -Session $Session -ByTime $ByTime -Start $Start -End $End -IncludeLinkedInstances $IncludeLinkedInstances -FilePath $FilePath
 }
 
 function GetAdminEvents
@@ -310,7 +343,12 @@ function GetAdminEvents
     [DateTime]$Start,
 
     [parameter(Mandatory=$false)]
-    [DateTime]$End) 
+    [DateTime]$End, 
+
+    [parameter(Mandatory=$false)]
+    [string]$FilePath
+
+    ) 
 
     # Default to query all 
     $Query = "*"
@@ -320,7 +358,7 @@ function GetAdminEvents
         $Query =  "*[System[Correlation[@ActivityID='{$CorrID}']]]"
     }
 
-    return MakeQuery -Query $Query -Log $global:CONST_ADMIN_LOG -Session $Session -ByTime $ByTime -Start $Start -End $End
+    return MakeQuery -Query $Query -Log $global:CONST_ADMIN_LOG -Session $Session -ByTime $ByTime -Start $Start -End $End -FilePath $FilePath
 }
 
 function GetDebugEvents
@@ -347,7 +385,12 @@ function GetDebugEvents
     [DateTime]$Start,
 
     [parameter(Mandatory=$false)]
-    [DateTime]$End)
+    [DateTime]$End,
+
+    [parameter(Mandatory=$false)]
+    [string]$FilePath
+
+    )
 
     # Default to query all
     $Query = "*"
@@ -357,7 +400,7 @@ function GetDebugEvents
         $Query =  "*[System[Correlation[@ActivityID='{$CorrID}']]]"
     }
 
-    return MakeQuery -Query $Query -Log $global:CONST_DEBUG_LOG -Session $Session -ByTime $ByTime -Start $Start -End $End
+    return MakeQuery -Query $Query -Log $global:CONST_DEBUG_LOG -Session $Session -ByTime $ByTime -Start $Start -End $End -FilePath $FilePath
 }
 
 function QueryDesiredLogs
@@ -387,7 +430,10 @@ function QueryDesiredLogs
         [DateTime]$End,
 
         [parameter(Mandatory=$false)]
-        [bool]$IncludeLinkedInstances
+        [bool]$IncludeLinkedInstances,
+
+        [parameter(Mandatory=$false)]
+        [string]$FilePath
     )
 
 
@@ -395,17 +441,17 @@ function QueryDesiredLogs
 
     if ($Logs -contains $global:CONST_LOG_PARAM_SECURITY)
     {
-        $Events += GetSecurityEvents -CorrID $CorrID -Session $Session -ByTime $ByTime -Start $Start -End $End -IncludeLinkedInstances $IncludeLinkedInstances
+        $Events += GetSecurityEvents -CorrID $CorrID -Session $Session -ByTime $ByTime -Start $Start -End $End -IncludeLinkedInstances $IncludeLinkedInstances -FilePath $FilePath
     }
 
     if ($Logs -contains $global:CONST_LOG_PARAM_DEBUG)
     {
-        $Events += GetDebugEvents -CorrID $CorrID -Session $Session -ByTime $ByTime -Start $Start -End $End
+        $Events += GetDebugEvents -CorrID $CorrID -Session $Session -ByTime $ByTime -Start $Start -End $End -FilePath $FilePath
     }
 
     if ($Logs -contains $global:CONST_LOG_PARAM_ADMIN)
     {
-        $Events += GetAdminEvents -CorrID $CorrID -Session $Session -ByTime $ByTime -Start $Start -End $End
+        $Events += GetAdminEvents -CorrID $CorrID -Session $Session -ByTime $ByTime -Start $Start -End $End -FilePath $FilePath
     }
 
     return $Events
@@ -422,34 +468,12 @@ function QueryDesiredLogs
 #
 # ----------------------------------------------------
 
-function LoadJson
-{
-    $global:REQUEST_OBJ_TEMPLATE = Get-Content -Raw -Path "data_templates/requestObjTemplate.json"
-    $global:RESPONSE_OBJ_TEMPLATE = Get-Content -Raw -Path "data_templates/responseObjTemplate.json"
-    $global:ANALYSIS_OBJ_TEMPLATE = Get-Content -Raw -Path "data_templates/analysisObjTemplate.json"
-    $global:ERROR_OBJ_TEMPLATE = Get-Content -Raw -Path "data_templates/errorObjTemplate.json"
-    $global:TIMELINE_OBJ_TEMPLATE = Get-Content -Raw -Path "data_templates/timelineObjTemplate.json"
-    $global:TOKEN_OBJ_TEMPLATE = Get-Content -Raw -Path "data_templates/tokenObjTemplate.json"
-    $global:DidLoadJson = $true
-}
-
 function NewObjectFromTemplate
 {
     param(
         [parameter(Mandatory=$true)]
         [string]$Template
     )
-
-    if ($global:DidLoadJson -eq $false)
-    {
-        LoadJson
-
-        if ($global:DidLoadJson -eq $false)
-        {
-            Write-Error "Failed to load data templates. Could not create a new JSON object."
-            return
-        }
-    }   
 
     return $Template | ConvertFrom-Json
 }
@@ -1172,7 +1196,7 @@ function Get-ADFSEvents
         Try
         {
             $Session = New-PSSession -ComputerName $Machine
-            $Events += QueryDesiredLogs -CorrID $CorrelationID -Session $Session -ByTime $ByTime -Start $StartTime.ToUniversalTime() -End $EndTime.ToUniversalTime() -IncludeLinkedInstances $includeLinks
+            $Events += QueryDesiredLogs -CorrID $CorrelationID -Session $Session -ByTime $ByTime -Start $StartTime.ToUniversalTime() -End $EndTime.ToUniversalTime() -IncludeLinkedInstances $includeLinks -FilePath $FilePath
         }
         Catch
         {
