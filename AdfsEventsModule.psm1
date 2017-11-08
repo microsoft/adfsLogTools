@@ -306,13 +306,11 @@ function GetSecurityEvents
 
     )
 
-    if ( $CorrID.length -eq 0 )
+    $Query = "*[System[Provider[@Name='{0}']]]" -f $global:CONST_ADFS_AUDIT
+
+    if($CorrID.Length -gt 0)
     {
-        $Query = "*[System[Provider[@Name='{0}' or @Name='{1}' or @Name='{2}']]]" -f $global:CONST_ADFS_ADMIN, $global:CONST_ADFS_AUDIT, $global:CONST_ADFS_DEBUG
-    }
-    else
-    {
-        $Query = "*[System[Provider[@Name='{0}' or @Name='{1}' or @Name='{2}']]] and *[EventData[Data and (Data='{3}')]]" -f $global:CONST_ADFS_ADMIN, $global:CONST_ADFS_AUDIT, $global:CONST_ADFS_DEBUG, $CorrID
+        $Query += " and *[EventData[Data and (Data='{0}')]]" -f $CorrID
     }
 
     # Perform the log query 
@@ -351,11 +349,11 @@ function GetAdminEvents
     ) 
 
     # Default to query all 
-    $Query = "*"
+    $Query = "*[System[Provider[@Name='{0}']]]" -f $global:CONST_ADFS_ADMIN
 
     if ( $CorrID.length -gt 0 )
     {
-        $Query =  "*[System[Correlation[@ActivityID='{$CorrID}']]]"
+        $Query +=  " and *[System[Correlation[@ActivityID='{$CorrID}']]]"
     }
 
     return MakeQuery -Query $Query -Log $global:CONST_ADMIN_LOG -Session $Session -ByTime $ByTime -Start $Start -End $End -FilePath $FilePath
@@ -393,11 +391,11 @@ function GetDebugEvents
     )
 
     # Default to query all
-    $Query = "*"
+     $Query = "*[System[Provider[@Name='{0}']]]" -f $global:CONST_ADFS_DEBUG
 
     if ( $CorrID.length -gt 0 )
     {
-        $Query =  "*[System[Correlation[@ActivityID='{$CorrID}']]]"
+        $Query +=  " and *[System[Correlation[@ActivityID='{$CorrID}']]]"
     }
 
     return MakeQuery -Query $Query -Log $global:CONST_DEBUG_LOG -Session $Session -ByTime $ByTime -Start $Start -End $End -FilePath $FilePath
@@ -1141,12 +1139,6 @@ function Get-ADFSEvents
     
     $ServerList = @()
     
-    # Validate Correlation ID is a valid GUID
-    $guidRef = [ref] [System.Guid]::NewGuid()
-    if ( $CorrelationID.length -eq 0 -or ![System.Guid]::TryParse( $CorrelationID, $guidRef ) ){ 
-        Write-Error "Invalid Correlation ID. Please provide a valid GUID."
-        Break
-    }
 
     # Validate timing parameters 
     if ( $StartTime -ne $null -and $EndTime -ne $null )
@@ -1168,6 +1160,13 @@ function Get-ADFSEvents
         # Set values to prevent binding issues when passing parameters
         $StartTime = Get-Date
         $EndTime = Get-Date
+    }
+
+    # Validate Correlation ID is a valid GUID
+    $guidRef = [ref] [System.Guid]::NewGuid()
+    if ( (!$All -and !$ByTime) -and ($CorrelationID.length -eq 0 -or ![System.Guid]::TryParse( $CorrelationID, $guidRef )) ){ 
+        Write-Error "Invalid Correlation ID. Please provide a valid GUID."
+        Break
     }
 
     if ( $CreateAnalysisData )
