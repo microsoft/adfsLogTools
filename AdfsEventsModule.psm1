@@ -4,6 +4,120 @@
 
 #Declare helper functions
 
+
+#function to enable ADFS auditing. Takes in parameters of server names
+function Enable-ADFSAuditing
+{
+    	<#
+    	.SYNOPSIS
+	This script enables ADFS verbose related events from the security, admin, and debug logs.
+
+    	.DESCRIPTION
+	To track ADFS authentication processing there are multiple items which must be enabled on the ADFS server(s). This function provides automation in enabling those items. Specifically, this function enables 
+	ADFS sourced Security events in the Security event log, verbose events in the ADFS Admin log, and ADFS tracing events in the ADFS Tracing/Debug log. 
+	Note that this function can only run on the local server-it cannot be run against a set of servers.
+	
+	EXAMPLE
+     	Enable-ADFSAuditing
+	#>
+
+	$cs = get-wmiobject -class win32_computersystem -ComputerName "localhost"
+	$DomainRole = $cs.domainrole
+	$OSVersion = gwmi win32_operatingsystem
+	[int]$BuildNumber = $OSVersion.BuildNumber 
+
+	#Check and add service account to auditing user right if needed
+	$ADFSService = GWMI Win32_Service -Filter "name = 'adfssrv'" -ComputerName "localhost"
+	$ADFSServiceAccount = $ADFSService.StartName
+	$objUser = New-Object System.Security.Principal.NTAccount($ADFSServiceAccount) 
+	$strSID = $objUser.Translate([System.Security.Principal.SecurityIdentifier]) 
+	$SvcAcctSID = $strSID.Value 
+	$SecTempPath = $pwd.path + '\SecTempPath'
+	if((test-path $SecTempPath) -eq $false){$SecPath = New-item -Path $SecTempPath -ItemType Directory} 
+	$SecTempPath = $SecTempPath + "\secpol.cfg"
+	$SeceditCmd = secedit /export /cfg $SecTempPath
+	$OldSeSecPriv = Select-string -path $SecTempPath -pattern "SeAuditPrivilege"
+	$OldSeSecPriv = $OldSeSecPriv.Line
+	$NewSeSecPriv = $OldSeSecPriv  + ",*" + $SvcAcctSID
+	(gc $SecTempPath).replace($OldSeSecPriv,$NewSeSecPriv) | Out-File -Filepath $SecTempPath 
+	secedit /configure /db c:\windows\security\local.sdb /cfg $SecTempPath /areas SECURITYPOLICY 
+	$RM = rm -force $SecTempPath -confirm:$false -ErrorAction SilentlyContinue
+	gpupdate /force
+
+	#Enable ADFS Tracing log
+	$ADFSTraceLogName = "AD FS Tracing/Debug"
+	$ADFSTraceLog = New-Object System.Diagnostics.Eventing.Reader.EventlogConfiguration $ADFSTraceLogName
+	if($ADFSTraceLog.IsEnabled -ne $true)
+		{
+		$ADFSTraceLog.IsEnabled = $true
+		$ADFSTraceLog.SaveChanges()
+		}
+
+	#Enable security auditing from ADFS
+	switch ($OSVersion.Buildnumber)
+		{
+		'6000'{Add-PsSnapin Microsoft.Adfs.Powershell -ErrorAction SilentlyContinue}
+		'6001'{Add-PsSnapin Microsoft.Adfs.Powershell -ErrorAction SilentlyContinue}
+		'6002'{Add-PsSnapin Microsoft.Adfs.Powershell -ErrorAction SilentlyContinue}
+		'7600'{Add-PsSnapin Microsoft.Adfs.Powershell -ErrorAction SilentlyContinue}
+		'7601'{Add-PsSnapin Microsoft.Adfs.Powershell -ErrorAction SilentlyContinue}
+		'9200'{Import-Module ADFS -ErrorAction SilentlyContinue}
+		'9600'{Import-Module ADFS -ErrorAction SilentlyContinue}
+		'14393'{Import-Module ADFS -ErrorAction SilentlyContinue}
+		}
+    $SyncProps = Get-ADFSSyncProperties
+    if ($SyncProps.Role -ne 'SecondaryComputer') {Set-ADFSProperties -LogLevel  @("FailureAudits","SuccessAudits","Warnings", "Verbose","Errors","Information")}
+	auditpol.exe /set /subcategory:"Application Generated" /failure:enable /success:enable
+
+	Write-host "ADFS auditing is now enabled."
+}
+
+#function to enable ADFS auditing. Takes in parameters of server names
+function Disable-ADFSAuditing
+{
+	<#
+    	.SYNOPSIS
+    	This script disables ADFS verbose related events from the security, admin, and debug logs.
+
+    	.DESCRIPTION
+	To track ADFS authentication processing there are multiple items which must be enabled on the ADFS server(s). This function provides automation for disabling those items so that event logs do not fill up.
+	Note that this function can only run on the local server-it cannot be run against a set of servers.
+	
+	EXAMPLE
+    	Disable-ADFSAuditing
+	#>
+	
+	#Disable ADFS Tracing log
+	$ADFSTraceLogName = "AD FS Tracing/Debug"
+	$ADFSTraceLog = New-Object System.Diagnostics.Eventing.Reader.EventlogConfiguration $ADFSTraceLogName
+	if ($ADFSTraceLog.IsEnabled -ne $false)
+		{
+		$ADFSTraceLog.IsEnabled = $false
+		$ADFSTraceLog.SaveChanges()
+		}
+
+	#Disable security auditing from ADFS
+	$cs = get-wmiobject -class win32_computersystem -ComputerName "localhost"
+	$DomainRole = $cs.domainrole
+	$OSVersion = gwmi win32_operatingsystem
+	[int]$BuildNumber = $OSVersion.BuildNumber 
+	switch ($OSVersion.Buildnumber)
+		{
+		'6000'{Add-PsSnapin Microsoft.Adfs.Powershell -ErrorAction SilentlyContinue}
+		'6001'{Add-PsSnapin Microsoft.Adfs.Powershell -ErrorAction SilentlyContinue}
+		'6002'{Add-PsSnapin Microsoft.Adfs.Powershell -ErrorAction SilentlyContinue}
+		'7600'{Add-PsSnapin Microsoft.Adfs.Powershell -ErrorAction SilentlyContinue}
+		'7601'{Add-PsSnapin Microsoft.Adfs.Powershell -ErrorAction SilentlyContinue}
+		'9200'{Import-Module ADFS -ErrorAction SilentlyContinue}
+		'9600'{Import-Module ADFS -ErrorAction SilentlyContinue}	
+		'14393'{Import-Module ADFS -ErrorAction SilentlyContinue}
+		}
+    $SyncProps = Get-ADFSSyncProperties
+    if ($SyncProps.Role -ne 'SecondaryComputer') {Set-ADFSProperties -LogLevel  @("Warnings","Errors","Information")}
+	auditpol.exe /set /subcategory:"Application Generated" /failure:disable /success:disable
+	
+	Write-host "ADFS auditing is now disabled."
+}
 function MakeQuery
 {
     param(
@@ -552,5 +666,7 @@ function Get-ADFSEvents
     
    
 }
+Export-ModuleMember -Function Enable-ADFSAuditing
+Export-ModuleMember -Function Disable-ADFSAuditing
 Export-ModuleMember -Function Get-ADFSEvents
 Export-ModuleMember -Function Write-ADFSEventsSummary
