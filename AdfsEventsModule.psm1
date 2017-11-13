@@ -202,6 +202,9 @@ function MakeQuery
             }
         }
 
+        #Write-Host "Instance IDs to Query"
+        #Write-Host $instanceIdsToQuery.Count
+
         #
         # If we have instance IDs to collect accross, do that collection now
         #
@@ -219,7 +222,8 @@ function MakeQuery
             }
 
             $queryString = ""
-            if ( $ByTime ){
+            if ( $ByTime )
+            {
                 $queryString = "*[System[Provider[@Name='{0}'] and ({1}) and TimeCreated[@SystemTime>='{2}' and @SystemTime<='{3}']]]" -f $providername, $eventIdString, $Start, $End
             }
             else
@@ -227,9 +231,8 @@ function MakeQuery
                 $queryString = "*[System[Provider[@Name='{0}'] and ({1})]]" -f $providername, $eventIdString
             }
 
-            # Note: we can do this query for just the local server, because an instance ID will never be written cross-server
-
-            Write-Host $queryString
+            # Write-Host $queryString
+            # TODO: BUGBUG - These queries are always failing 
 
             $instanceIdResultsRaw = $null
             if ( $FilePath )
@@ -238,32 +241,35 @@ function MakeQuery
             }
             else
             {
-                $instanceIdResultsRaw = Get-WinEvent -FilterXPath $queryString -ErrorAction SilentlyContinue
+                #$instanceIdResultsRaw = Get-WinEvent -FilterXPath $queryString -ErrorAction SilentlyContinue
             }
 
-            Write-Host $instanceIdResultsRaw.Count
-            
-            foreach ( $instanceID in $instanceIdsToQuery )
+            foreach ( $eventID in $auditsWithInstanceIds )
             {
-                foreach ( $instanceEvent in $instanceIdResultsRaw)
+                $instanceIdResultsRaw = Get-WinEvent -FilterHashtable @{logname = $Log; providername = $providername; Id = $eventID } -ErrorAction SilentlyContinue
+            
+                foreach ( $instanceID in $instanceIdsToQuery )
                 {
-                    if ( $instanceID -eq $instanceEvent.Properties[0].Value )
+                    foreach ( $instanceEvent in $instanceIdResultsRaw)
                     {
-                        # We have an event that we want 
-
-                        # Copy data of remote params
-                        $Properties = @()
-                        foreach ( $Property in $instanceEvent.Properties )
+                        if ( $instanceID -eq $instanceEvent.Properties[0].Value )
                         {
-                            # TODO: BUGBUG - do we need to call .value? Don't we want the full object?
-                            $Properties += $Property.value
-                        }
+                            # We have an event that we want 
 
-                        $instanceEvent | Add-Member RemoteProperties $Properties
-                        $instanceEvent | Add-Member AdfsInstanceId $instanceEvent.Properties[0].Value
+                            # Copy data of remote params
+                            $Properties = @()
+                            foreach ( $Property in $instanceEvent.Properties )
+                            {
+                                # TODO: BUGBUG - do we need to call .value? Don't we want the full object?
+                                $Properties += $Property.value
+                            }
 
-                        $Result += $instanceEvent
-                    }                    
+                            $instanceEvent | Add-Member RemoteProperties $Properties
+                            $instanceEvent | Add-Member AdfsInstanceId $instanceEvent.Properties[0].Value
+
+                            $Result += $instanceEvent
+                        }                    
+                    }
                 }
             }
         }
@@ -668,6 +674,10 @@ function Generate-ResponseEvent
     $response.result = "{0} {1}" -f $event.RemoteProperties[3], $event.RemoteProperties[4] 
 
     $headerEvent = $LinkedEvents[$event.RemoteProperties[0]] #InstanceID
+    if ($headerEvent -eq $null )
+    {
+        $headerEvent = @{}
+    }
     $headersObj = Process-HeadersFromEvent -events $headerEvent
     $response.headers = $headersObj
 
@@ -710,7 +720,12 @@ function Generate-RequestEvent
     $currentRequest.server = $event.MachineName
 
     $headerEvent = $LinkedEvents[$event.RemoteProperties[0]] #InstanceID
+    if ($headerEvent -eq $null )
+    {
+        $headerEvent = @{}
+    }
     $headersObj = Process-HeadersFromEvent -events $headerEvent
+
     $currentRequest.headers = $headersObj
 
     # Load the HTTP and HTTPS ports, if we haven't already 
@@ -755,6 +770,11 @@ function Update-ResponseEvent
         $responseEvent.result = "{0} {1}" -f $event.RemoteProperties[3], $event.RemoteProperties[4] 
 
         $headerEvent = $LinkedEvents[$event.RemoteProperties[0]] #InstanceID
+        if ($headerEvent -eq $null )
+        {
+            $headerEvent = @{}
+        }
+
         $headersObj = Process-HeadersFromEvent -events $headerEvent
         $responseEvent.headers = $headersObj
 
