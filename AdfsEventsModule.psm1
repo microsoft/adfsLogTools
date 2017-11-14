@@ -229,7 +229,6 @@ function MakeQuery
 
             # Note: we can do this query for just the local server, because an instance ID will never be written cross-server
 
-            Write-Host $queryString
 
             $instanceIdResultsRaw = $null
             if ( $FilePath )
@@ -241,7 +240,6 @@ function MakeQuery
                 $instanceIdResultsRaw = Get-WinEvent -FilterXPath $queryString -ErrorAction SilentlyContinue
             }
 
-            Write-Host $instanceIdResultsRaw.Count
             
             foreach ( $instanceID in $instanceIdsToQuery )
             {
