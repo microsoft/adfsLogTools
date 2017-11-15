@@ -19,7 +19,7 @@ $global:CONST_LOG_PARAM_SECURITY = "security"
 $global:CONST_LOG_PARAM_ADMIN = "admin"
 $global:CONST_LOG_PARAM_DEBUG = "debug"
 
-$global:CONST_AUDITS_TO_AGGREGATE = @( "299", "324", "403", "404", "411", "412")
+$global:CONST_AUDITS_TO_AGGREGATE = @( "299", "324", "403", "404", "412")
 $global:CONST_AUDITS_LINKED = @(500, 501, 502, 503, 510)
 $global:CONST_TIMELINE_AUDITS = @(299, 324, 403, 411, 412)
 
@@ -45,7 +45,6 @@ $global:CONST_ADFS_HTTP_PORT = 0
 $global:CONST_ADFS_HTTPS_PORT = 0
 
 $global:DidLoadPorts = $false
-$global:DidLoadJson = $true
 
 
 
@@ -147,7 +146,7 @@ function MakeQuery
         #
         # Process results from Get-WinEvent query 
         #
-        $instanceIdsToQuery = @()
+        $instanceIdsToQuery = @{}
 
         foreach ( $Event in $Result )
         {
@@ -161,49 +160,34 @@ function MakeQuery
             }
             $Event | Add-Member RemoteProperties $Properties
             
-            # Contains activity ID
-            if ( $Event.Properties.count -gt 0 )
+            if ( $Event.ActivityId )
+            {
+                # We have an Activity ID, set the CorrelationID field for consistency 
+                $Event | Add-Member CorrelationID $Event.ActivityId.Guid
+            }
+
+            # If we didn't have an ActivityId, try to extract one manually 
+            if ( (-not $Event.ActivityId) -and $Event.Properties.count -gt 0 )
             {
                 $guidRef = [ref] [System.Guid]::NewGuid()
                 if ( [System.Guid]::TryParse( $Event.Properties[1].Value, $guidRef ) ) 
                 {
                     $Event | Add-Member CorrelationID $Event.Properties[1].Value 
-                }
-                else
-                {
-                    # Ensure correlation id is not lost through the serialization process
-                    $Event | Add-Member CorrelationID $Event.Properties[0].Value 
-
-                    # TODO: BUGBUG: This will always be the instance ID. Instance ID and Correlation ID are not the same
-                }
-            }
-            else
-            {
-                # Redundant property. Allows for consistency among all events
-                $Event | Add-Member CorrelationID $Event.ActivityID 
+                }                
             }
 
             # If we want to include events that are linked by the instance ID, we need to 
             #  generate a list of instance IDs to query on for the current server 
-            if ( $IncludeLinkedInstances -or $true )
+            if ( $IncludeLinkedInstances -or $true ) #TODO: Fix this 
             {
-                if ( $Event.CorrelationID.length -ne 0 )
+                if ( $auditsToAggregate -contains $Event.Id )
                 {
-                    # We only want to collect linked instance data when the correlation ID was provided, 
-                    #  otherwise the results could become too large 
-
-                     if ( $auditsToAggregate -contains $Event.Id )
-                    {
-                        # The instance ID in this event should be used to get more data
-                        $instanceID = $Event.Properties[0].Value 
-                        $instanceIdsToQuery += $instanceID
-                    }
+                    # The instance ID in this event should be used to get more data
+                    $instanceID = $Event.Properties[0].Value 
+                    $instanceIdsToQuery[$instanceID] = $Event.CorrelationID
                 }
             }
         }
-
-        #Write-Host "Instance IDs to Query"
-        #Write-Host $instanceIdsToQuery.Count
 
         #
         # If we have instance IDs to collect accross, do that collection now
@@ -248,11 +232,13 @@ function MakeQuery
             {
                 $instanceIdResultsRaw = Get-WinEvent -FilterHashtable @{logname = $Log; providername = $providername; Id = $eventID } -ErrorAction SilentlyContinue
             
-                foreach ( $instanceID in $instanceIdsToQuery )
+                foreach ( $instanceId in $instanceIdsToQuery.Keys )
                 {
+                    $correlationID = $instanceIdsToQuery[$instanceId]
+
                     foreach ( $instanceEvent in $instanceIdResultsRaw)
                     {
-                        if ( $instanceID -eq $instanceEvent.Properties[0].Value )
+                        if ( $instanceId -eq $instanceEvent.Properties[0].Value )
                         {
                             # We have an event that we want 
 
@@ -266,6 +252,7 @@ function MakeQuery
 
                             $instanceEvent | Add-Member RemoteProperties $Properties
                             $instanceEvent | Add-Member AdfsInstanceId $instanceEvent.Properties[0].Value
+                            $instanceEvent | Add-Member CorrelationID $correlationID
 
                             $Result += $instanceEvent
                         }                    
@@ -1018,7 +1005,6 @@ function AggregateOutputObject
         "AnalysisData" = $Data
     }
 
-    Write-Output $Output
     return $Output
 }
 
@@ -1188,19 +1174,6 @@ function Get-ADFSEvents
         Write-Error "Invalid Correlation ID. Please provide a valid GUID."
         Break
     }
-
-    if ( $CreateAnalysisData )
-    {
-        if ($global:DidLoadJson -eq $false)
-        {
-            LoadJson
-
-            if ($global:DidLoadJson -eq $false)
-            {
-                Write-Error "Failed to load data templates. Creating JSON objects will likely fail."
-            }
-        } 
-    }
     
     # Iterate through each server, and collect the required logs
     foreach ( $Machine in $Server )
@@ -1235,12 +1208,6 @@ function Get-ADFSEvents
     foreach ( $Event in $Events )
     {
         $ID = [string] $Event.CorrelationID
-
-        # TODO: BUGBUG - Why are we doing this?
-        if($CorrelationID -ne "" -and $CorrelationID -ne $ID)
-        {
-            continue #Unrelated event mentioned correlation id in data blob
-        }
                 
         if(![string]::IsNullOrEmpty($ID) -and $EventsByCorrId.Contains($ID)) 
         {
@@ -1254,13 +1221,28 @@ function Get-ADFSEvents
         }
     }
 
-    $dataObj = $null
+    # Note: When we do the correlation ID aggregation, we are dropping any events that do not have a correlation ID set. 
+    #  All Admin logs should have a correlation ID, and all audits should either have a correlation ID, or have a separate 
+    #  record, which is identical, but contains a correlation ID (we do this for audits that have an instance ID, but no correlation ID)
+
+    $dataObj = @{}
     if ( $CreateAnalysisData )
     {
         $dataObj = Process-EventsForAnalysis -events $Events
     }
 
-    return AggregateOutputObject -Data $dataObj -Events $EventsByCorrId[$CorrelationID] -CorrID $CorrelationID
+    $allAggObjects = @()
+    foreach ( $corrId in $EventsByCorrId.Keys )
+    {
+        $eventsData = @()
+        if ( $EventsByCorrId[$corrId] )
+        {
+            $eventsData = $EventsByCorrId[$corrId]
+        }
+        $allAggObjects += AggregateOutputObject -Data $dataObj -Events $eventsData -CorrID $corrId
+    }
+
+    return $allAggObjects
 }
 
 #
