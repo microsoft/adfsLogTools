@@ -4,6 +4,20 @@
 
 #Declare helper functions
 
+function Load-AdfsPowerShell
+{
+    $OSVersion = gwmi win32_operatingsystem
+    [int]$BuildNumber = $OSVersion.BuildNumber 
+
+    if ( $BuildNumber -le 7601 )
+    {
+        Add-PsSnapin Microsoft.Adfs.Powershell -ErrorAction SilentlyContinue
+    }else
+    {
+        Import-Module ADFS -ErrorAction SilentlyContinue
+    }
+}
+
 function Enable-ADFSAuditing
 {
     <#
@@ -23,8 +37,6 @@ function Enable-ADFSAuditing
 
 	$cs = get-wmiobject -class win32_computersystem -ComputerName "localhost"
 	$DomainRole = $cs.domainrole
-	$OSVersion = gwmi win32_operatingsystem
-	[int]$BuildNumber = $OSVersion.BuildNumber 
 
 	#Check and add service account to auditing user right if needed
 	$ADFSService = GWMI Win32_Service -Filter "name = 'adfssrv'" -ComputerName "localhost"
@@ -53,18 +65,7 @@ function Enable-ADFSAuditing
 		$ADFSTraceLog.SaveChanges()
 	}
 
-	#Enable security auditing from ADFS
-	switch ($OSVersion.Buildnumber)
-	{
-		'6000'{Add-PsSnapin Microsoft.Adfs.Powershell -ErrorAction SilentlyContinue}
-		'6001'{Add-PsSnapin Microsoft.Adfs.Powershell -ErrorAction SilentlyContinue}
-		'6002'{Add-PsSnapin Microsoft.Adfs.Powershell -ErrorAction SilentlyContinue}
-		'7600'{Add-PsSnapin Microsoft.Adfs.Powershell -ErrorAction SilentlyContinue}
-		'7601'{Add-PsSnapin Microsoft.Adfs.Powershell -ErrorAction SilentlyContinue}
-		'9200'{Import-Module ADFS -ErrorAction SilentlyContinue}
-		'9600'{Import-Module ADFS -ErrorAction SilentlyContinue}
-		'14393'{Import-Module ADFS -ErrorAction SilentlyContinue}
-	}
+    Load-AdfsPowerShell
 
     $SyncProps = Get-ADFSSyncProperties
     if ($SyncProps.Role -ne 'SecondaryComputer') 
@@ -73,10 +74,9 @@ function Enable-ADFSAuditing
     }
 	auditpol.exe /set /subcategory:"Application Generated" /failure:enable /success:enable
 
-	Write-host "ADFS auditing is now enabled."
+	Write-Verbose "ADFS auditing is now enabled."
 }
 
-#function to enable ADFS auditing. Takes in parameters of server names
 function Disable-ADFSAuditing
 {
 	<#
@@ -104,19 +104,8 @@ function Disable-ADFSAuditing
 	#Disable security auditing from ADFS
 	$cs = get-wmiobject -class win32_computersystem -ComputerName "localhost"
 	$DomainRole = $cs.domainrole
-	$OSVersion = gwmi win32_operatingsystem
-	[int]$BuildNumber = $OSVersion.BuildNumber 
-	switch ($OSVersion.Buildnumber)
-	{
-		'6000'{Add-PsSnapin Microsoft.Adfs.Powershell -ErrorAction SilentlyContinue}
-		'6001'{Add-PsSnapin Microsoft.Adfs.Powershell -ErrorAction SilentlyContinue}
-		'6002'{Add-PsSnapin Microsoft.Adfs.Powershell -ErrorAction SilentlyContinue}
-		'7600'{Add-PsSnapin Microsoft.Adfs.Powershell -ErrorAction SilentlyContinue}
-		'7601'{Add-PsSnapin Microsoft.Adfs.Powershell -ErrorAction SilentlyContinue}
-		'9200'{Import-Module ADFS -ErrorAction SilentlyContinue}
-		'9600'{Import-Module ADFS -ErrorAction SilentlyContinue}	
-		'14393'{Import-Module ADFS -ErrorAction SilentlyContinue}
-	}
+
+    Load-AdfsPowerShell
 
     $SyncProps = Get-ADFSSyncProperties
     if ( $SyncProps.Role -ne 'SecondaryComputer' ) 
@@ -125,7 +114,7 @@ function Disable-ADFSAuditing
     }
 	auditpol.exe /set /subcategory:"Application Generated" /failure:disable /success:disable
 	
-	Write-host "ADFS auditing is now disabled."
+	Write-Verbose "ADFS auditing is now disabled."
 }
 
 function MakeQuery
