@@ -19,12 +19,11 @@ $global:CONST_LOG_PARAM_SECURITY = "security"
 $global:CONST_LOG_PARAM_ADMIN = "admin"
 $global:CONST_LOG_PARAM_DEBUG = "debug"
 
-$global:CONST_AUDITS_TO_AGGREGATE = @( "299", "324", "403", "404", "411", "412")
+$global:CONST_AUDITS_TO_AGGREGATE = @( "299", "324", "403", "404", "412")
 $global:CONST_AUDITS_LINKED = @(500, 501, 502, 503, 510)
 $global:CONST_TIMELINE_AUDITS = @(299, 324, 403, 411, 412)
 
 # TODO: PowerShell is not good with JSON objects. Headers should be {}. 
-
 $global:REQUEST_OBJ_TEMPLATE = '{"num": 0,"time": "1/1/0001 12:00:00 AM","protocol": "","host": "","method": "","url": "","query": "","useragent": "","server": "","clientip": "","contlen": 0,"headers": [],"tokens": [],"ver": "1.0"}'
 $global:RESPONSE_OBJ_TEMPLATE = '{"num": 0,"time": "1/1/0001 12:00:00 AM","result": "","headers": {},"tokens": [],"ver": "1.0"}'
 $global:ANALYSIS_OBJ_TEMPLATE = '{"requests": [],"responses": [],"errors": [],"timeline": [],"ver": "1.0"}'
@@ -45,7 +44,6 @@ $global:CONST_ADFS_HTTP_PORT = 0
 $global:CONST_ADFS_HTTPS_PORT = 0
 
 $global:DidLoadPorts = $false
-$global:DidLoadJson = $true
 
 
 
@@ -108,13 +106,6 @@ function MakeQuery
         [DateTime]$End,
         [string]$FilePath)
 
-
-        # TODO: Perform adjustment for time skew. Check the difference between the current UTC time on this machine,
-        #  and the current UTC time on the target machine
-
-        # TODO: Consider checking audits on each machine to determine the behavior level, and then 
-        #  keep track of that for event parsing schema 
-
         #
         # Perform Get-WinEvent call to collect logs 
         #
@@ -147,7 +138,7 @@ function MakeQuery
         #
         # Process results from Get-WinEvent query 
         #
-        $instanceIdsToQuery = @()
+        $instanceIdsToQuery = @{}
 
         foreach ( $Event in $Result )
         {
@@ -161,43 +152,31 @@ function MakeQuery
             }
             $Event | Add-Member RemoteProperties $Properties
             
-            # Contains activity ID
-            if ( $Event.Properties.count -gt 0 )
+            if ( $Event.ActivityId )
+            {
+                # We have an Activity ID, set the CorrelationID field for consistency 
+                $Event | Add-Member CorrelationID $Event.ActivityId.Guid
+            }
+
+            # If we didn't have an ActivityId, try to extract one manually 
+            if ( (-not $Event.ActivityId) -and $Event.Properties.count -gt 0 )
             {
                 $guidRef = [ref] [System.Guid]::NewGuid()
                 if ( [System.Guid]::TryParse( $Event.Properties[1].Value, $guidRef ) ) 
                 {
                     $Event | Add-Member CorrelationID $Event.Properties[1].Value 
-                }
-                else
-                {
-                    # Ensure correlation id is not lost through the serialization process
-                    $Event | Add-Member CorrelationID $Event.Properties[0].Value 
-
-                    # TODO: BUGBUG: This will always be the instance ID. Instance ID and Correlation ID are not the same
-                }
-            }
-            else
-            {
-                # Redundant property. Allows for consistency among all events
-                $Event | Add-Member CorrelationID $Event.ActivityID 
+                }                
             }
 
             # If we want to include events that are linked by the instance ID, we need to 
             #  generate a list of instance IDs to query on for the current server 
-            if ( $IncludeLinkedInstances -or $true )
+            if ( $IncludeLinkedInstances )
             {
-                if ( $Event.CorrelationID.length -ne 0 )
+                if ( $auditsToAggregate -contains $Event.Id )
                 {
-                    # We only want to collect linked instance data when the correlation ID was provided, 
-                    #  otherwise the results could become too large 
-
-                     if ( $auditsToAggregate -contains $Event.Id )
-                    {
-                        # The instance ID in this event should be used to get more data
-                        $instanceID = $Event.Properties[0].Value 
-                        $instanceIdsToQuery += $instanceID
-                    }
+                    # The instance ID in this event should be used to get more data
+                    $instanceID = $Event.Properties[0].Value 
+                    $instanceIdsToQuery[$instanceID] = $Event.CorrelationID
                 }
             }
         }
@@ -219,7 +198,8 @@ function MakeQuery
             }
 
             $queryString = ""
-            if ( $ByTime ){
+            if ( $ByTime )
+            {
                 $queryString = "*[System[Provider[@Name='{0}'] and ({1}) and TimeCreated[@SystemTime>='{2}' and @SystemTime<='{3}']]]" -f $providername, $eventIdString, $Start, $End
             }
             else
@@ -227,8 +207,13 @@ function MakeQuery
                 $queryString = "*[System[Provider[@Name='{0}'] and ({1})]]" -f $providername, $eventIdString
             }
 
+<<<<<<< HEAD
             # Note: we can do this query for just the local server, because an instance ID will never be written cross-server
 
+=======
+            # Write-Host $queryString
+            # TODO: BUGBUG - These queries are always failing 
+>>>>>>> 7612cd2389bafd2fdb8000af947022433ce6b008
 
             $instanceIdResultsRaw = $null
             if ( $FilePath )
@@ -237,31 +222,43 @@ function MakeQuery
             }
             else
             {
-                $instanceIdResultsRaw = Get-WinEvent -FilterXPath $queryString -ErrorAction SilentlyContinue
+                #$instanceIdResultsRaw = Get-WinEvent -FilterXPath $queryString -ErrorAction SilentlyContinue
             }
 
+<<<<<<< HEAD
             
             foreach ( $instanceID in $instanceIdsToQuery )
+=======
+            foreach ( $eventID in $auditsWithInstanceIds )
+>>>>>>> 7612cd2389bafd2fdb8000af947022433ce6b008
             {
-                foreach ( $instanceEvent in $instanceIdResultsRaw)
+                $instanceIdResultsRaw = Get-WinEvent -FilterHashtable @{logname = $Log; providername = $providername; Id = $eventID } -ErrorAction SilentlyContinue
+            
+                foreach ( $instanceId in $instanceIdsToQuery.Keys )
                 {
-                    if ( $instanceID -eq $instanceEvent.Properties[0].Value )
+                    $correlationID = $instanceIdsToQuery[$instanceId]
+
+                    foreach ( $instanceEvent in $instanceIdResultsRaw)
                     {
-                        # We have an event that we want 
-
-                        # Copy data of remote params
-                        $Properties = @()
-                        foreach ( $Property in $instanceEvent.Properties )
+                        if ( $instanceId -eq $instanceEvent.Properties[0].Value )
                         {
-                            # TODO: BUGBUG - do we need to call .value? Don't we want the full object?
-                            $Properties += $Property.value
-                        }
+                            # We have an event that we want 
 
-                        $instanceEvent | Add-Member RemoteProperties $Properties
-                        $instanceEvent | Add-Member AdfsInstanceId $instanceEvent.Properties[0].Value
+                            # Copy data of remote params
+                            $Properties = @()
+                            foreach ( $Property in $instanceEvent.Properties )
+                            {
+                                # TODO: BUGBUG - do we need to call .value? Don't we want the full object?
+                                $Properties += $Property.value
+                            }
 
-                        $Result += $instanceEvent
-                    }                    
+                            $instanceEvent | Add-Member RemoteProperties $Properties
+                            $instanceEvent | Add-Member AdfsInstanceId $instanceEvent.Properties[0].Value
+                            $instanceEvent | Add-Member CorrelationID $correlationID
+
+                            $Result += $instanceEvent
+                        }                    
+                    }
                 }
             }
         }
@@ -666,6 +663,10 @@ function Generate-ResponseEvent
     $response.result = "{0} {1}" -f $event.RemoteProperties[3], $event.RemoteProperties[4] 
 
     $headerEvent = $LinkedEvents[$event.RemoteProperties[0]] #InstanceID
+    if ($headerEvent -eq $null )
+    {
+        $headerEvent = @{}
+    }
     $headersObj = Process-HeadersFromEvent -events $headerEvent
     $response.headers = $headersObj
 
@@ -686,9 +687,6 @@ function Generate-RequestEvent
         [object]$LinkedEvents
     )
 
-    # TODO: This is the schema for ADFS 2016
-    # Need to adjust for 2012R2 
-
     $currentRequest = NewObjectFromTemplate -Template $global:REQUEST_OBJ_TEMPLATE
     $currentRequest.num = $requestCount
 
@@ -708,7 +706,12 @@ function Generate-RequestEvent
     $currentRequest.server = $event.MachineName
 
     $headerEvent = $LinkedEvents[$event.RemoteProperties[0]] #InstanceID
+    if ($headerEvent -eq $null )
+    {
+        $headerEvent = @{}
+    }
     $headersObj = Process-HeadersFromEvent -events $headerEvent
+
     $currentRequest.headers = $headersObj
 
     # Load the HTTP and HTTPS ports, if we haven't already 
@@ -753,6 +756,11 @@ function Update-ResponseEvent
         $responseEvent.result = "{0} {1}" -f $event.RemoteProperties[3], $event.RemoteProperties[4] 
 
         $headerEvent = $LinkedEvents[$event.RemoteProperties[0]] #InstanceID
+        if ($headerEvent -eq $null )
+        {
+            $headerEvent = @{}
+        }
+
         $headersObj = Process-HeadersFromEvent -events $headerEvent
         $responseEvent.headers = $headersObj
 
@@ -996,7 +1004,6 @@ function AggregateOutputObject
         "AnalysisData" = $Data
     }
 
-    Write-Output $Output
     return $Output
 }
 
@@ -1166,19 +1173,6 @@ function Get-ADFSEvents
         Write-Error "Invalid Correlation ID. Please provide a valid GUID."
         Break
     }
-
-    if ( $CreateAnalysisData )
-    {
-        if ($global:DidLoadJson -eq $false)
-        {
-            LoadJson
-
-            if ($global:DidLoadJson -eq $false)
-            {
-                Write-Error "Failed to load data templates. Creating JSON objects will likely fail."
-            }
-        } 
-    }
     
     # Iterate through each server, and collect the required logs
     foreach ( $Machine in $Server )
@@ -1213,12 +1207,6 @@ function Get-ADFSEvents
     foreach ( $Event in $Events )
     {
         $ID = [string] $Event.CorrelationID
-
-        # TODO: BUGBUG - Why are we doing this?
-        if($CorrelationID -ne "" -and $CorrelationID -ne $ID)
-        {
-            continue #Unrelated event mentioned correlation id in data blob
-        }
                 
         if(![string]::IsNullOrEmpty($ID) -and $EventsByCorrId.Contains($ID)) 
         {
@@ -1232,13 +1220,29 @@ function Get-ADFSEvents
         }
     }
 
-    $dataObj = $null
-    if ( $CreateAnalysisData )
+    # Note: When we do the correlation ID aggregation, we are dropping any events that do not have a correlation ID set. 
+    #  All Admin logs should have a correlation ID, and all audits should either have a correlation ID, or have a separate 
+    #  record, which is identical, but contains a correlation ID (we do this for audits that have an instance ID, but no correlation ID)
+
+    $allAggObjects = @()
+    foreach ( $corrId in $EventsByCorrId.Keys )
     {
-        $dataObj = Process-EventsForAnalysis -events $Events
+        $eventsData = @()
+        if ( $EventsByCorrId[$corrId] )
+        {
+            $eventsData = $EventsByCorrId[$corrId]
+        }
+
+        $dataObj = @{}
+        if ( $CreateAnalysisData )
+        {
+            $dataObj = Process-EventsForAnalysis -events $eventsData
+        }
+
+        $allAggObjects += AggregateOutputObject -Data $dataObj -Events $eventsData -CorrID $corrId
     }
 
-    return AggregateOutputObject -Data $dataObj -Events $EventsByCorrId[$CorrelationID] -CorrID $CorrelationID
+    return $allAggObjects
 }
 
 #
