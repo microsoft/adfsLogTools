@@ -94,13 +94,14 @@ function MakeQuery
     )
 
     # Get-WinEvent is performed through a remote powershell session to avoid firewall issues that arise from simply passing a computer name to Get-WinEvent  
-    Invoke-Command -Session $Session -ArgumentList $Query, $Log, $global:CONST_ADFS_AUDIT, $global:CONST_AUDITS_TO_AGGREGATE, $global:CONST_AUDITS_LINKED, $ByTime, $Start, $End, $FilePath -ScriptBlock {
+    Invoke-Command -Session $Session -ArgumentList $Query, $Log, $global:CONST_ADFS_AUDIT, $global:CONST_AUDITS_TO_AGGREGATE, $global:CONST_AUDITS_LINKED, $IncludeLinkedInstances, $ByTime, $Start, $End, $FilePath -ScriptBlock {
         param(
         [string]$Query, 
         [string]$Log,
         [string]$providername,
         [object]$auditsToAggregate,
         [object]$auditsWithInstanceIds,
+        [bool] $IncludeLinkedInstances,
         [bool]$ByTime,
         [DateTime]$Start,
         [DateTime]$End,
@@ -109,7 +110,7 @@ function MakeQuery
         #
         # Perform Get-WinEvent call to collect logs 
         #
-        if ( $FilePath.Length -gt 0 )
+        if ( $FilePath.Length -gt 0 -and !$ByTime)
         {   
             $Result = Get-WinEvent -Path $FilePath -FilterXPath $Query -ErrorAction SilentlyContinue -Oldest
         }
@@ -121,7 +122,11 @@ function MakeQuery
             $AdjustedEnd = [System.TimeZoneInfo]::ConvertTimeFromUtc($End, $TimeZone)
 
             # Filtering based on time is more robust when using hashtable filters
-            if ( $Log -eq "security" )
+            if($FilePath.Length -gt 0)
+            {
+                $Result = Get-WinEvent -FilterHashtable @{Path = $FilePath; providername = $providername; starttime = $AdjustedStart; endtime = $AdjustedEnd} -ErrorAction SilentlyContinue
+            }
+            elseif ( $Log -eq "security" )
             {
                 $Result = Get-WinEvent -FilterHashtable @{logname = $Log; providername = $providername; starttime = $AdjustedStart; endtime = $AdjustedEnd} -ErrorAction SilentlyContinue
             }
@@ -207,13 +212,8 @@ function MakeQuery
                 $queryString = "*[System[Provider[@Name='{0}'] and ({1})]]" -f $providername, $eventIdString
             }
 
-<<<<<<< HEAD
-            # Note: we can do this query for just the local server, because an instance ID will never be written cross-server
-
-=======
             # Write-Host $queryString
             # TODO: BUGBUG - These queries are always failing 
->>>>>>> 7612cd2389bafd2fdb8000af947022433ce6b008
 
             $instanceIdResultsRaw = $null
             if ( $FilePath )
@@ -225,12 +225,7 @@ function MakeQuery
                 #$instanceIdResultsRaw = Get-WinEvent -FilterXPath $queryString -ErrorAction SilentlyContinue
             }
 
-<<<<<<< HEAD
-            
-            foreach ( $instanceID in $instanceIdsToQuery )
-=======
             foreach ( $eventID in $auditsWithInstanceIds )
->>>>>>> 7612cd2389bafd2fdb8000af947022433ce6b008
             {
                 $instanceIdResultsRaw = Get-WinEvent -FilterHashtable @{logname = $Log; providername = $providername; Id = $eventID } -ErrorAction SilentlyContinue
             
