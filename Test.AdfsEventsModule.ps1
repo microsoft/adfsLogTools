@@ -52,6 +52,43 @@ Describe 'Basic functionality of Get-ADFSEvents'{
         Start-Sleep -Seconds 3
 
         $global:endTime = Get-Date
+
+        $securityLogs = "Security"
+        $global:exportFileName = "SecurityLogs.evtx"
+        wevtutil.exe export-log $securityLogs $exportFileName /overwrite:true
+    }
+
+    It "FromFile with CorrelationID returns Non-Empty Events List"{
+        $logs = Get-ADFSEvents -Logs Security -CorrelationID $global:currentGuid.Guid -FilePath $global:exportFileName
+        $logs.Events.Count | Should -BeGreaterThan 0   
+    }
+
+    It "FromFile with All returns Non-Empty Events List"{
+        $logs = Get-ADFSEvents -Logs Security -All -FilePath $global:exportFileName
+
+        $logs.Count | Should -BeGreaterThan 0
+        $logs[0].Events.Count | Should -BeGreaterThan 0   
+    }
+
+    It "FromFile with AnalysisData returns Non-Empty Events List"{
+        $logs = Get-ADFSEvents -Logs Security -All -FilePath $global:exportFileName -CreateAnalysisData
+
+        $logs.Count | Should -BeGreaterThan 0
+        $logs[0].Events.Count | Should -BeGreaterThan 0   
+    }
+
+    It "FromFile with AnalysisData ByTime returns Non-Empty Events List"{
+        $logs = Get-ADFSEvents -Logs Security -All -FilePath $global:exportFileName -CreateAnalysisData -StartTime $global:startTime -EndTime $global:endTime 
+
+        $logs.Count | Should -BeGreaterThan 0
+        $logs[0].Events.Count | Should -BeGreaterThan 0   
+    }
+
+    It "FromFile with AnalysisData with ID returns Non-Empty Events List"{
+        $logs = Get-ADFSEvents -Logs Security -CorrelationID $global:currentGuid.Guid -FilePath $global:exportFileName -CreateAnalysisData 
+
+        $logs.Count | Should -BeGreaterThan 0
+        $logs[0].Events.Count | Should -BeGreaterThan 0   
     }
 
     It "CorrelationID Call Returns Exactly 1 Aggregate Object"{
