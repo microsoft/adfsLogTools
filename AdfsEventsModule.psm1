@@ -191,43 +191,16 @@ function MakeQuery
         #
         if ( $instanceIdsToQuery.Count -gt 0 )
         {
-            $eventIdString = ""
             foreach ( $eventID in $auditsWithInstanceIds )
-            {
-                if ( $eventIdString.Length -gt 0)
+            { 
+                if($FilePath)
                 {
-                    $eventIdString += " or "
+                    $instanceIdResultsRaw = Get-WinEvent -FilterHashtable @{Path= $FilePath; providername = $providername; Id = $eventID } -ErrorAction SilentlyContinue
                 }
-
-                $eventIdString += "EventID={0}" -f $eventID
-            }
-
-            $queryString = ""
-            if ( $ByTime )
-            {
-                $queryString = "*[System[Provider[@Name='{0}'] and ({1}) and TimeCreated[@SystemTime>='{2}' and @SystemTime<='{3}']]]" -f $providername, $eventIdString, $Start, $End
-            }
-            else
-            {
-                $queryString = "*[System[Provider[@Name='{0}'] and ({1})]]" -f $providername, $eventIdString
-            }
-
-            # Write-Host $queryString
-            # TODO: BUGBUG - These queries are always failing 
-
-            $instanceIdResultsRaw = $null
-            if ( $FilePath )
-            {
-                $instanceIdResultsRaw = Get-WinEvent -FilterXPath $queryString -ErrorAction SilentlyContinue -Path $FilePath
-            }
-            else
-            {
-                #$instanceIdResultsRaw = Get-WinEvent -FilterXPath $queryString -ErrorAction SilentlyContinue
-            }
-
-            foreach ( $eventID in $auditsWithInstanceIds )
-            {
-                $instanceIdResultsRaw = Get-WinEvent -FilterHashtable @{logname = $Log; providername = $providername; Id = $eventID } -ErrorAction SilentlyContinue
+                else
+                {
+                     $instanceIdResultsRaw = Get-WinEvent -FilterHashtable @{logname = $Log; providername = $providername; Id = $eventID } -ErrorAction SilentlyContinue
+                }
             
                 foreach ( $instanceId in $instanceIdsToQuery.Keys )
                 {
