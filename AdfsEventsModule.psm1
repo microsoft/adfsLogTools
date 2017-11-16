@@ -24,7 +24,6 @@ $global:CONST_AUDITS_LINKED = @(500, 501, 502, 503, 510)
 $global:CONST_TIMELINE_AUDITS = @(299, 324, 403, 411, 412)
 
 # TODO: PowerShell is not good with JSON objects. Headers should be {}. 
-
 $global:REQUEST_OBJ_TEMPLATE = '{"num": 0,"time": "1/1/0001 12:00:00 AM","protocol": "","host": "","method": "","url": "","query": "","useragent": "","server": "","clientip": "","contlen": 0,"headers": [],"tokens": [],"ver": "1.0"}'
 $global:RESPONSE_OBJ_TEMPLATE = '{"num": 0,"time": "1/1/0001 12:00:00 AM","result": "","headers": {},"tokens": [],"ver": "1.0"}'
 $global:ANALYSIS_OBJ_TEMPLATE = '{"requests": [],"responses": [],"errors": [],"timeline": [],"ver": "1.0"}'
@@ -107,13 +106,6 @@ function MakeQuery
         [DateTime]$End,
         [string]$FilePath)
 
-
-        # TODO: Perform adjustment for time skew. Check the difference between the current UTC time on this machine,
-        #  and the current UTC time on the target machine
-
-        # TODO: Consider checking audits on each machine to determine the behavior level, and then 
-        #  keep track of that for event parsing schema 
-
         #
         # Perform Get-WinEvent call to collect logs 
         #
@@ -178,7 +170,7 @@ function MakeQuery
 
             # If we want to include events that are linked by the instance ID, we need to 
             #  generate a list of instance IDs to query on for the current server 
-            if ( $IncludeLinkedInstances -or $true ) #TODO: Fix this 
+            if ( $IncludeLinkedInstances )
             {
                 if ( $auditsToAggregate -contains $Event.Id )
                 {
@@ -684,9 +676,6 @@ function Generate-RequestEvent
         [parameter(Mandatory=$false)]
         [object]$LinkedEvents
     )
-
-    # TODO: This is the schema for ADFS 2016
-    # Need to adjust for 2012R2 
 
     $currentRequest = NewObjectFromTemplate -Template $global:REQUEST_OBJ_TEMPLATE
     $currentRequest.num = $requestCount
