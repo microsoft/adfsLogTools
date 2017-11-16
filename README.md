@@ -204,33 +204,34 @@ The AnalysisData blob contains the following:
 Each request contains request details, HTTP header information, and session token information (when available)
 
 * ```responses``` - a set of HTTP responses given during the current transaction. 
-Each response contains resposne details, HTTP header information, and outgoing tokens (when available)
+Each response contains response details, HTTP header information, and outgoing tokens (when available)
 
 * ```errors``` - a set of [EventLogRecord](https://msdn.microsoft.com/en-us/library/system.diagnostics.eventing.reader.eventlogrecord) objects from 
-the current transaction that are marked as errors. 
+the current transaction that are marked as errors
 
-* ```timeline``` - a set of timeline events to show the progress of a transaction. Timeline events correspond to roughly the following: 
+* ```timeline``` - a set of timeline events to show the progress of a transaction through the ADFS pipeline. 
+  Timeline events correspond to roughly the following: 
 
     * ```incoming``` - ADFS received an incoming HTTP request 
     * ```authn``` - ADFS is performing authentication 
     * ```authz``` - ADFS is performing authorization checks 
     * ```issuance``` - ADFS is performing token issuance 
 
-  Each timeline event contains a ```success``` or ```failure``` result, indiciating whether the given pipeline step was a success or failure. 
+  Each timeline event contains a ```success``` or ```failure``` result, indicating whether the given pipeline step was a success or failure. 
 
 ## Pester Tests 
 
 This project includes a set of [Pester](https://github.com/pester/Pester) tests to ensure the basic functionality of the script. 
 
-To run the tests, you must have Pester version 4.x installed on the machine you will run ```Get-ADFSEvents``` from. For more information
-on installing Pester, see their [installation instructions](https://github.com/pester/Pester/wiki/Installation-and-Update). 
+To run the tests, you must have Pester version 4.x or higher installed on the machine you will run ```Get-ADFSEvents``` from. 
+For more information on installing Pester, see their [installation instructions](https://github.com/pester/Pester/wiki/Installation-and-Update). 
 
 Once Pester is installed, you can copy the test file and script to the same location, and run the following: 
 
-    ```cd <directory containing tests and script>
-      Invoke-Pester -Script .\Test.AdfsEventsModule.ps1```
+    cd <directory containing tests and script>
+    Invoke-Pester -Script .\Test.AdfsEventsModule.ps1
 
-For more details on the tests for this script, see [the testing Readme](.\TESTDETAILS.md)
+For more details, see [the testing Readme](TESTDETAILS.md)
 
 
 ## Contributing
