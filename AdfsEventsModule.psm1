@@ -1225,12 +1225,6 @@ function Get-ADFSEvents
     #  All Admin logs should have a correlation ID, and all audits should either have a correlation ID, or have a separate 
     #  record, which is identical, but contains a correlation ID (we do this for audits that have an instance ID, but no correlation ID)
 
-    $dataObj = @{}
-    if ( $CreateAnalysisData )
-    {
-        $dataObj = Process-EventsForAnalysis -events $Events
-    }
-
     $allAggObjects = @()
     foreach ( $corrId in $EventsByCorrId.Keys )
     {
@@ -1239,6 +1233,13 @@ function Get-ADFSEvents
         {
             $eventsData = $EventsByCorrId[$corrId]
         }
+
+        $dataObj = @{}
+        if ( $CreateAnalysisData )
+        {
+            $dataObj = Process-EventsForAnalysis -events $eventsData
+        }
+
         $allAggObjects += AggregateOutputObject -Data $dataObj -Events $eventsData -CorrID $corrId
     }
 

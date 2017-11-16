@@ -161,6 +161,40 @@ Describe 'Basic functionality of Get-ADFSEvents'{
         $hasInvalidGuid | Should -Be $false
     }
 
+    It "All Flag with AnalysisData returns Analysis Objects"{
+        $logs = Get-ADFSEvents -Logs Security -All -CreateAnalysisData
+
+        $hasInvalidBlob = $false
+
+        foreach ( $aggObj in $logs )
+        {
+            if ( -not $aggObj.AnalysisData.requests.Count )
+            {
+                $hasInvalidBlob = $true
+                break
+            }
+        }
+
+        $hasInvalidBlob | Should -Be $false
+    }
+
+    It "All Flag with AnalysisData with ByTime returns Analysis Objects"{
+        $logs = Get-ADFSEvents -Logs Security -CreateAnalysisData -StartTime $global:startTime -EndTime $global:endTime 
+
+        $hasInvalidBlob = $false
+
+        foreach ( $aggObj in $logs )
+        {
+            if ( -not $aggObj.AnalysisData.requests.Count )
+            {
+                $hasInvalidBlob = $true
+                break
+            }
+        }
+
+        $hasInvalidBlob | Should -Be $false
+    }
+
     It "ByTime returns Multiple Aggregate Objects, with Multiple Events"{
         $logs = Get-ADFSEvents -Logs Security -StartTime $global:startTime -EndTime $global:endTime 
         $logs.Count | Should -BeGreaterThan 0
