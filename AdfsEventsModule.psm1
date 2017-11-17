@@ -884,6 +884,7 @@ function Process-EventsForAnalysis
             {
                 # We only want to include one 403 timeline event
                 $allTimeline += Generate-TimelineEvent -event $event 
+                # TODO: Decide if we want to set incoming marked 
             }
         }
 
@@ -900,7 +901,15 @@ function Process-EventsForAnalysis
             $tokenObj = Process-TokensFromEvent -event $event -LinkedEvents $LinkedEvents
             $tokenObj[0].num = $requestCount  
 
-            $currentRequest = $mapRequestNumToObjects[$requestCount][0] 
+            # If we don't have a request/response pair yet, add one
+            if ( -not $mapRequestNumToObjects[$requestCount] )
+            {
+                $currentRequest = Generate-RequestEvent -requestCount $requestCount
+                $currentResponse = Generate-ResponseEvent -requestCount $requestCount
+                $mapRequestNumToObjects[$requestCount] = @($currentRequest, $currentResponse)
+            }
+
+            $currentRequest = $mapRequestNumToObjects[$requestCount][0]
             $currentRequest.tokens += $tokenObj[0]
         }
 

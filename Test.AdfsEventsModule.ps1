@@ -54,7 +54,7 @@ Describe 'Basic functionality of Get-ADFSEvents'{
         $global:endTime = Get-Date
 
         $securityLogs = "Security"
-        $global:exportFileName = "SecurityLogs.evtx"
+        $global:exportFileName = (pwd).Path + "\SecurityLogs.evtx"
         wevtutil.exe export-log $securityLogs $exportFileName /overwrite:true
     }
 
