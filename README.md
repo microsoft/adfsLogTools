@@ -14,9 +14,9 @@ This module exposes the following cmdlets:
 
 2. __```Write-ADFSEventsSummary```__ - Allows you to generate a summary of an ADFS request, based on the logs from ```Get-ADFSEvents```
 
-3. __```Enable-ADFSAuditing```__ - Enables all the ADFS auditing switches on the current server 
+3. __```Enable-ADFSAuditing```__ - Enables all the ADFS and OS auditing switches on the current server, and enables just the ADFS switches on remote servers
 
-4. __```Disable-ADFSAuditing```__ - Disables all the ADFS auditing switches on the current server 
+4. __```Disable-ADFSAuditing```__ - Disables all the ADFS and OS auditing switches on the current server, and disables just the ADFS switches on remote servers
 
 The detailed parameters for __```Get-ADFSEvents```__ and __```Write-ADFSEventsSummary```__ are provided below.
 

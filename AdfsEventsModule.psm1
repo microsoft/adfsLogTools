@@ -4,22 +4,13 @@
 
 #Declare helper functions
 
-function Load-AdfsPowerShell
-{
-    $OSVersion = gwmi win32_operatingsystem
-    [int]$BuildNumber = $OSVersion.BuildNumber 
-
-    if ( $BuildNumber -le 7601 )
-    {
-        Add-PsSnapin Microsoft.Adfs.Powershell -ErrorAction SilentlyContinue
-    }else
-    {
-        Import-Module ADFS -ErrorAction SilentlyContinue
-    }
-}
-
 function Enable-ADFSAuditing
 {
+    param(
+        [parameter(Mandatory=$False)]
+        [string[]]$Server="LocalHost"
+    )
+
     <#
     .SYNOPSIS
 	This script enables ADFS verbose related events from the security, admin, and debug logs.
@@ -29,7 +20,7 @@ function Enable-ADFSAuditing
     enabling those items. Specifically, this function enables 	ADFS sourced Security events in the Security event log, verbose events in the ADFS Admin log,
     and ADFS tracing events in the ADFS Tracing/Debug log. 
 
-    Note that this function can only run on the local server-it cannot be run against a set of servers.
+    Note that this function can only run the ADFS properties on remote servers, and not the OS trace log commands.
 	
 	EXAMPLE
      	Enable-ADFSAuditing
@@ -65,20 +56,37 @@ function Enable-ADFSAuditing
 		$ADFSTraceLog.SaveChanges()
 	}
 
-    Load-AdfsPowerShell
-
-    $SyncProps = Get-ADFSSyncProperties
-    if ($SyncProps.Role -ne 'SecondaryComputer') 
+    foreach($Machine in $Server)
     {
-        Set-ADFSProperties -LogLevel  @( "FailureAudits", "SuccessAudits", "Warnings", "Verbose", "Errors", "Information")
+        Try
+        {
+            $Session = New-PSSession -ComputerName $Machine
+            Set-ADFSAuditingRemote -Session $Session -Enable $True
+            auditpol.exe /set /subcategory:"Application Generated" /failure:enable /success:enable
+        }
+        Catch
+        {
+            Write-Warning "Error enabling ADFS auditing settings on $Machine. Error: $_"
+        }
+        Finally
+        {
+            if($Session)
+            {
+                Remove-PSSession $Session
+            }
+        }
     }
-	auditpol.exe /set /subcategory:"Application Generated" /failure:enable /success:enable
 
 	Write-Verbose "ADFS auditing is now enabled."
 }
 
 function Disable-ADFSAuditing
 {
+    param(
+        [parameter(Mandatory=$False)]
+        [string[]]$Server="LocalHost"
+    )
+
 	<#
     .SYNOPSIS
     This script disables ADFS verbose related events from the security, admin, and debug logs.
@@ -86,7 +94,8 @@ function Disable-ADFSAuditing
     .DESCRIPTION
 	To track ADFS authentication processing there are multiple items which must be enabled on the ADFS server(s). This function provides 
     automation for disabling those items so that event logs do not fill up.
-    Note that this function can only run on the local server-it cannot be run against a set of servers.
+    
+    Note that this function can only run the ADFS properties on remote servers, and not the OS trace log commands.
 	
 	EXAMPLE
     	Disable-ADFSAuditing
@@ -105,16 +114,65 @@ function Disable-ADFSAuditing
 	$cs = get-wmiobject -class win32_computersystem -ComputerName "localhost"
 	$DomainRole = $cs.domainrole
 
-    Load-AdfsPowerShell
-
-    $SyncProps = Get-ADFSSyncProperties
-    if ( $SyncProps.Role -ne 'SecondaryComputer' ) 
+    foreach($Machine in $Server)
     {
-        Set-ADFSProperties -LogLevel  @( "Warnings", "Errors", "Information" )
+        Try
+        {
+            $Session = New-PSSession -ComputerName $Machine
+            Set-ADFSAuditingRemote -Session $Session -Enable $False
+            auditpol.exe /set /subcategory:"Application Generated" /failure:disable /success:disable
+        }
+        Catch
+        {
+            Write-Warning "Error disabling ADFS auditing settings on $Machine. Error: $_"
+        }
+        Finally
+        {
+            if($Session)
+            {
+                Remove-PSSession $Session
+            }
+        }
     }
-	auditpol.exe /set /subcategory:"Application Generated" /failure:disable /success:disable
-	
+
 	Write-Verbose "ADFS auditing is now disabled."
+}
+
+function Set-ADFSAuditingRemote
+{
+    param(
+        [Parameter(Mandatory=$True)]
+        [System.Management.Automation.Runspaces.PSSession]$Session,
+        
+        [Parameter(Mandatory=$True)]
+        [bool]$Enable
+    )
+
+    Invoke-Command -Session $Session -ScriptBlock {
+
+        $OSVersion = gwmi win32_operatingsystem
+        [int]$BuildNumber = $OSVersion.BuildNumber 
+
+        if ( $BuildNumber -le 7601 )
+        {
+            Add-PsSnapin Microsoft.Adfs.Powershell -ErrorAction SilentlyContinue
+        }else
+        {
+            Import-Module ADFS -ErrorAction SilentlyContinue
+        }
+
+        $SyncProps = Get-ADFSSyncProperties
+        if ( $SyncProps.Role -ne 'SecondaryComputer' ) 
+        {
+            if ( $Enable )
+            {
+                Set-ADFSProperties -LogLevel  @( "FailureAudits", "SuccessAudits", "Warnings", "Verbose", "Errors", "Information")
+                Set-ADFSProperties -AuditLevel Verbose
+            }else{
+                Set-ADFSProperties -LogLevel  @( "Warnings", "Errors", "Information" )
+            }            
+        }
+    }
 }
 
 function MakeQuery
