@@ -426,12 +426,34 @@ function CreateHeaderObject
 {
     $Obj = New-Object PSObject -Property @{
         "QueryString" = ""
+        "QueryStringParameters" = @{}
         "ResponseString" = ""
         "RequestHeader" = @{}
         "ResponseHeader"= @{}
+        "RequestTime" = ""
+        "ResponseTime" = ""
     }
 
     Write-Output $Obj
+}
+
+function ParseQueryString
+{
+    param(
+    [Parameter(Mandatory=$True)]
+    [string]$QueryString)
+
+    $Parameters = @{}
+    $SplitString = $QueryString.Split("&")
+    foreach($Pair in $SplitString)
+    {
+        $KeyValuePair = $Pair.Split("=")
+        $Key = $KeyValuePair[0]
+        $Parameters.$Key = $KeyValuePair[1]
+    }
+
+    Write-Output($Parameters)
+    
 }
 
 function GetHTTPRequestInformation
@@ -467,12 +489,16 @@ function GetHTTPRequestInformation
         {
             $HeaderObject.QueryString = $RequestAndResponseEvents[$I].RemoteProperties[4] + $RequestAndResponseEvents[$I].RemoteProperties[5] +  $RequestAndResponseEvents[$I].RemoteProperties[6]
             $HeaderObject.RequestHeader = ConstructHeader -Event $HeaderEvents[$I]
+            $Params = ParseQueryString -QueryString $RequestAndResponseEvents[$I].RemoteProperties[6].Substring(1) #Remove ? as starting character
+            $HeaderObject.QueryStringParameters = $Params
+            $HeaderObject.RequestTime = $RequestAndResponseEvents[$I].TimeCreated
               
         }
         else #Event is a 404
         {
             $HeaderObject.ResponseString = $ResponseString = $RequestAndResponseEvents[$I].RemoteProperties[3] + " " + $RequestAndResponseEvents[$I].RemoteProperties[4]
             $HeaderObject.ResponseHeader = ConstructHeader -Event $HeaderEvents[$I] 
+            $HeaderObject.ResponseTime = $RequestAndResponseEvents[$I].TimeCreated
         }
 
         if(($CurrentID -eq 404) -or $I -eq ($RequestAndResponseEvents.length-1) -or ($RequestAndResponseEvents[$I+1].ID -eq 403))

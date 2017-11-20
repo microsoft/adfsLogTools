@@ -57,17 +57,26 @@ If the __Headers__ flag is included in the cmdlet's invocation, the output objec
 The __Headers__ property contains a list of objects, each containing the following properties:
 
 1.  __QueryString__
-2.  __ResponseString__
-3.  __RequestHeader__
-4.  __ResponseHeader__
+2.  __QueryStringParameters__
+3.  __ResponseString__
+4.  __RequestHeader__
+5.  __ResponseHeader__
+6.  __RequestTime__
+7.  __ResponseTime__
 
 The __QueryString__ property contains the HTTP verb (GET, POST, etc) and the corresponding query string.
+
+The __QueryStringParameters__ property contains a key/value pair representation of the parameters included in the HTTP request
 
 The __ResponseString__ property contains the HTTP response string (ex. 200 ok)
 
 The __RequestHeader__ property is a dictionary containing the headers included in the HTTP request
 
 The __ResponseHeader__ property is a dictionary containing the headers included in the HTTP response
+
+The __RequestTime__ property contains the timestamp of the request
+
+The __ResponseTime__ property contains the timestamp of the response
 
 
 ## Using Get-ADFSEvents
