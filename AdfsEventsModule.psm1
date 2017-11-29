@@ -19,7 +19,7 @@ $global:CONST_LOG_PARAM_SECURITY = "security"
 $global:CONST_LOG_PARAM_ADMIN = "admin"
 $global:CONST_LOG_PARAM_DEBUG = "debug"
 
-$global:CONST_AUDITS_TO_AGGREGATE = @( "299", "324", "403", "404", "412")
+$global:CONST_AUDITS_TO_AGGREGATE = @( 299, 324, 403, 404, 412)
 $global:CONST_AUDITS_LINKED = @(500, 501, 502, 503, 510)
 $global:CONST_TIMELINE_AUDITS = @(299, 324, 403, 411, 412)
 
@@ -152,7 +152,6 @@ function MakeQuery
             $Properties = @()
             foreach ( $Property in $Event.Properties )
             {
-                # TODO: BUGBUG - do we need to call .value? Don't we want the full object?
                 $Properties += $Property.value
             }
             $Event | Add-Member RemoteProperties $Properties
@@ -193,7 +192,7 @@ function MakeQuery
         {
             foreach ( $eventID in $auditsWithInstanceIds )
             { 
-                if($FilePath)
+                if ( $FilePath )
                 {
                     $instanceIdResultsRaw = Get-WinEvent -FilterHashtable @{Path= $FilePath; providername = $providername; Id = $eventID } -ErrorAction SilentlyContinue
                 }
@@ -216,7 +215,6 @@ function MakeQuery
                             $Properties = @()
                             foreach ( $Property in $instanceEvent.Properties )
                             {
-                                # TODO: BUGBUG - do we need to call .value? Don't we want the full object?
                                 $Properties += $Property.value
                             }
 
@@ -513,7 +511,7 @@ function Process-TokensFromEvent
 
     $allTokens = @()
 
-    if ( $event.Id -eq 412)
+    if ( $event.Id -eq 412 -or $event.Id -eq 324 )
     {
         $tokenObj = NewObjectFromTemplate -Template $global:TOKEN_OBJ_TEMPLATE
         $claims = @()
@@ -524,24 +522,6 @@ function Process-TokensFromEvent
         }
 
         $tokenObj.type = $event.RemoteProperties[2]
-        $tokenObj.rp = $event.RemoteProperties[3]
-        $tokenObj.direction = "incoming"
-        $tokenObj.claims = $claims
-
-        $allTokens += $tokenObj
-    }
-
-    if ( $event.Id -eq 324 )
-    {
-        $tokenObj = NewObjectFromTemplate -Template $global:TOKEN_OBJ_TEMPLATE
-        $claims = @()
-        foreach ( $linkedEvent in $LinkedEvents[$event.RemoteProperties[0]] ) #InstanceID
-        {
-            # Get claims out of token 
-            $claims += Get-ClaimsFromEvent -event $linkedEvent
-        }
-
-        $tokenObj.user = $event.RemoteProperties[2]
         $tokenObj.rp = $event.RemoteProperties[3]
         $tokenObj.direction = "incoming"
         $tokenObj.claims = $claims
@@ -570,8 +550,6 @@ function Process-TokensFromEvent
                 # Caller claims
                 $claimsIn += Get-ClaimsFromEvent -event $linkedEvent
             }
-
-            # Get claims out of token 
         }
 
         $tokenObjOut.rp = $event.RemoteProperties[2]
@@ -631,7 +609,7 @@ function Generate-ResponseEvent
     $response.result = "{0} {1}" -f $event.RemoteProperties[3], $event.RemoteProperties[4] 
 
     $headerEvent = $LinkedEvents[$event.RemoteProperties[0]] #InstanceID
-    if ($headerEvent -eq $null )
+    if ( $headerEvent -eq $null )
     {
         $headerEvent = @{}
     }
@@ -734,10 +712,32 @@ function Update-ResponseEvent
 
         return $responseEvent
     }
+}
 
-    if ( $event.Id -eq 299 )
+function Update-RequestEvent
+{
+    param(
+        [parameter(Mandatory=$false)]
+        [object]$event,
+
+        [parameter(Mandatory=$true)]
+        [object]$requestEvent,
+
+        [parameter(Mandatory=$true)]
+        [int]$requestCount,
+
+        [parameter(Mandatory=$false)]
+        [object]$LinkedEvents
+    )
+
+    if ( $event.Id -eq 403 )
     {
+        $newEvent = Generate-RequestEvent -event $event -requestCount $requestCount -LinkedEvents $LinkedEvents
 
+        # Merge tokens
+        $newEvent.tokens += $requestEvent.tokens
+
+        return $newEvent
     }
 }
 
@@ -818,6 +818,7 @@ function Process-EventsForAnalysis
     $allTimeline = @()
     $timelineIncomingMarked = $false
     $LinkedEvents = @{}
+    $PreviousRequestStatus = @()
 
     # Do a pre-pass through the events set to generate 
     #  a hashtable of instance IDs to their events 
@@ -844,21 +845,24 @@ function Process-EventsForAnalysis
     foreach ( $event in $events )
     {
         # Error or warning. We use 'Level' int to avoid localization issues  
-        if ( ($event.Level -eq 2 ) -or ($event.Level -eq 3 )  -or ($event.Level -eq 16 ))
+        if ( ( $event.Level -ge 1 -and $event.Level -le 3 )  -or ( $event.Level -eq 16 ) )
         {
-            # TODO: BUGBUG - will 411's show up as error events? Will any failure audit? Level is 16 for 411
             $allErrors += Generate-ErrorEvent -event $event 
         }
 
         # If this event signals a timeline event, generate it 
         if ( $event.Id -in $global:CONST_TIMELINE_AUDITS)
         {
-            if( $event.Id -ne 403 -or -not $timelineIncomingMarked )
-            {
-                # We only want to include one 403 timeline event
-                $allTimeline += Generate-TimelineEvent -event $event 
-                # TODO: Decide if we want to set incoming marked 
-            }
+            $allTimeline += Generate-TimelineEvent -event $event 
+        }
+
+        if ( -not $mapRequestNumToObjects[$requestCount] )
+        {
+            # We don't have a request/response pair to work with, so create one now
+
+            $currentRequest = Generate-RequestEvent -requestCount $requestCount
+            $currentResponse = Generate-ResponseEvent -requestCount $requestCount
+            $mapRequestNumToObjects[$requestCount] = @($currentRequest, $currentResponse)
         }
 
         # 411 - token validation failure 
@@ -873,14 +877,6 @@ function Process-EventsForAnalysis
             # Use this for caller identity on request object            
             $tokenObj = Process-TokensFromEvent -event $event -LinkedEvents $LinkedEvents
             $tokenObj[0].num = $requestCount  
-
-            # If we don't have a request/response pair yet, add one
-            if ( -not $mapRequestNumToObjects[$requestCount] )
-            {
-                $currentRequest = Generate-RequestEvent -requestCount $requestCount
-                $currentResponse = Generate-ResponseEvent -requestCount $requestCount
-                $mapRequestNumToObjects[$requestCount] = @($currentRequest, $currentResponse)
-            }
 
             $currentRequest = $mapRequestNumToObjects[$requestCount][0]
             $currentRequest.tokens += $tokenObj[0]
@@ -905,27 +901,35 @@ function Process-EventsForAnalysis
         {
             # We have a new request, so generate a request/response pair, and store it 
 
-            if ( $mapRequestNumToObjects[$requestCount] -ne $null -and $mapRequestNumToObjects[$requestCount].Count -gt 0 )
+            if ( $PreviousRequestStatus.Count -gt 0 )
             {
-                # We have a previous request in the pipeline. Finalize that request
+                # We have a previous request in the pipeline. Finalize that request and generate a new one 
                 $requestCount += 1
+                
+                $currentRequest = Generate-RequestEvent -event $event -requestCount $requestCount -LinkedEvents $LinkedEvents
+                $currentResponse = Generate-ResponseEvent -requestCount $requestCount
+                $mapRequestNumToObjects[$requestCount] = @($currentRequest, $currentResponse)
+            }
+            else
+            {
+                $currentRequest = $mapRequestNumToObjects[$requestCount][0]
+                $updatedRequest = Update-RequestEvent -event $event -requestCount $requestCount -requestEvent $currentRequest -LinkedEvents $LinkedEvents 
+                $mapRequestNumToObjects[$requestCount][0] = $updatedRequest
             }
             
-            $currentRequest = Generate-RequestEvent -event $event -requestCount $requestCount -LinkedEvents $LinkedEvents
-            $currentResponse = Generate-ResponseEvent -requestCount $requestCount
-            $mapRequestNumToObjects[$requestCount] = @($currentRequest, $currentResponse)
+            $PreviousRequestStatus += 403
         }
         
         # 404 - response sent 
         if ( $event.Id -eq 404 )
         {
-            if ( $mapRequestNumToObjects[$requestCount] -eq $null -or $mapRequestNumToObjects[$requestCount].Count -eq 0 )
+            if ( $PreviousRequestStatus.Count -gt 0 -and $PreviousRequestStatus[-1] -eq 404 )
             {
-                # We have a response, but no request yet. Create the request/response pair 
+                # We have received two 404 events without a 403. We should create a new request/response pair 
+                $requestCount += 1
                 $currentRequest = Generate-RequestEvent -requestCount $requestCount
-                $currentResponse = Generate-ResponseEvent -event $event -requestCount $requestCount -LinkedEvents $LinkedEvents 
+                $currentResponse = Generate-ResponseEvent -requestCount $requestCount -event $event -LinkedEvents $LinkedEvents 
                 $mapRequestNumToObjects[$requestCount] = @($currentRequest, $currentResponse)
-                #$requestCount += 1
             }
             else
             {
@@ -933,9 +937,11 @@ function Process-EventsForAnalysis
                 $updatedResponse = Update-ResponseEvent -event $event -responseEvent $currentResponse -LinkedEvents $LinkedEvents 
                 $mapRequestNumToObjects[$requestCount][1] = $updatedResponse
             }
-
+            
             # We do not mark a request/response pair as complete until we have a new request come in, 
-            #  since we sometimes see events after the 404 (token issuance, etc.) 
+            #  since we sometimes see events after the 404 (token issuance, etc.)
+
+            $PreviousRequestStatus += 404
         }
     }
 
