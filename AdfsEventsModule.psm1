@@ -7,43 +7,43 @@
 #
 # ----------------------------------------------------
 
-$global:CONST_ADFS_ADMIN = "AD FS"
-$global:CONST_ADFS_AUDIT = "AD FS Auditing"
-$global:CONST_ADFS_DEBUG = "AD FS Tracing"
+$script:CONST_ADFS_ADMIN = "AD FS"
+$script:CONST_ADFS_AUDIT = "AD FS Auditing"
+$script:CONST_ADFS_DEBUG = "AD FS Tracing"
 
-$global:CONST_SECURITY_LOG = "security"
-$global:CONST_ADMIN_LOG = "AD FS/Admin"
-$global:CONST_DEBUG_LOG = "AD FS Tracing/Debug"
+$script:CONST_SECURITY_LOG = "security"
+$script:CONST_ADMIN_LOG = "AD FS/Admin"
+$script:CONST_DEBUG_LOG = "AD FS Tracing/Debug"
 
-$global:CONST_LOG_PARAM_SECURITY = "security"
-$global:CONST_LOG_PARAM_ADMIN = "admin"
-$global:CONST_LOG_PARAM_DEBUG = "debug"
+$script:CONST_LOG_PARAM_SECURITY = "security"
+$script:CONST_LOG_PARAM_ADMIN = "admin"
+$script:CONST_LOG_PARAM_DEBUG = "debug"
 
-$global:CONST_AUDITS_TO_AGGREGATE = @( 299, 324, 403, 404, 412)
-$global:CONST_AUDITS_LINKED = @(500, 501, 502, 503, 510)
-$global:CONST_TIMELINE_AUDITS = @(299, 324, 403, 411, 412)
+$script:CONST_AUDITS_TO_AGGREGATE = @( 299, 324, 403, 404, 412)
+$script:CONST_AUDITS_LINKED = @(500, 501, 502, 503, 510)
+$script:CONST_TIMELINE_AUDITS = @(299, 324, 403, 411, 412)
 
 # TODO: PowerShell is not good with JSON objects. Headers should be {}. 
-$global:REQUEST_OBJ_TEMPLATE = '{"num": 0,"time": "1/1/0001 12:00:00 AM","protocol": "","host": "","method": "","url": "","query": "","useragent": "","server": "","clientip": "","contlen": 0,"headers": [],"tokens": [],"ver": "1.0"}'
-$global:RESPONSE_OBJ_TEMPLATE = '{"num": 0,"time": "1/1/0001 12:00:00 AM","result": "","headers": {},"tokens": [],"ver": "1.0"}'
-$global:ANALYSIS_OBJ_TEMPLATE = '{"requests": [],"responses": [],"errors": [],"timeline": [],"ver": "1.0"}'
-$global:ERROR_OBJ_TEMPLATE = '{"time": "1/1/0001 12:00:00 AM","eventid": 0,"level": "", "message": [],"ver": "1.0"}'
-$global:TIMELINE_OBJ_TEMPLATE = '{"time": "","type": "", "tokentype": "", "rp": "","result": "","stage": 0,"ver": "1.0"}'
-$global:TOKEN_OBJ_TEMPLATE = '{"num": 0,"type": "","rp": "","user": "","direction": "","claims": [],"oboclaims": [],"actasclaims": [],"ver": "1.0"}'
+$script:REQUEST_OBJ_TEMPLATE = '{"num": 0,"time": "1/1/0001 12:00:00 AM","protocol": "","host": "","method": "","url": "","query": "","useragent": "","server": "","clientip": "","contlen": 0,"headers": [],"tokens": [],"ver": "1.0"}'
+$script:RESPONSE_OBJ_TEMPLATE = '{"num": 0,"time": "1/1/0001 12:00:00 AM","result": "","headers": {},"tokens": [],"ver": "1.0"}'
+$script:ANALYSIS_OBJ_TEMPLATE = '{"requests": [],"responses": [],"errors": [],"timeline": [],"ver": "1.0"}'
+$script:ERROR_OBJ_TEMPLATE = '{"time": "1/1/0001 12:00:00 AM","eventid": 0,"level": "", "message": [],"ver": "1.0"}'
+$script:TIMELINE_OBJ_TEMPLATE = '{"time": "","type": "", "tokentype": "", "rp": "","result": "","stage": 0,"ver": "1.0"}'
+$script:TOKEN_OBJ_TEMPLATE = '{"num": 0,"type": "","rp": "","user": "","direction": "","claims": [],"oboclaims": [],"actasclaims": [],"ver": "1.0"}'
 
-$global:TIMELINE_INCOMING = "incoming"
-$global:TIMELINE_AUTHENTICATION = "authn"
-$global:TIMELINE_AUTHORIZATION = "authz"
-$global:TIMELINE_ISSUANCE = "issuance"
-$global:TIMELINE_SUCCESS = "success"
-$global:TIMELINE_FAILURE = "fail"
+$script:TIMELINE_INCOMING = "incoming"
+$script:TIMELINE_AUTHENTICATION = "authn"
+$script:TIMELINE_AUTHORIZATION = "authz"
+$script:TIMELINE_ISSUANCE = "issuance"
+$script:TIMELINE_SUCCESS = "success"
+$script:TIMELINE_FAILURE = "fail"
 
-$global:TOKEN_TYPE_ACCESS = "access_token"
+$script:TOKEN_TYPE_ACCESS = "access_token"
 
-$global:CONST_ADFS_HTTP_PORT = 0
-$global:CONST_ADFS_HTTPS_PORT = 0
+$script:CONST_ADFS_HTTP_PORT = 0
+$script:CONST_ADFS_HTTPS_PORT = 0
 
-$global:DidLoadPorts = $false
+$script:DidLoadPorts = $false
 
 
 
@@ -94,7 +94,7 @@ function MakeQuery
     )
 
     # Get-WinEvent is performed through a remote powershell session to avoid firewall issues that arise from simply passing a computer name to Get-WinEvent  
-    Invoke-Command -Session $Session -ArgumentList $Query, $Log, $global:CONST_ADFS_AUDIT, $global:CONST_AUDITS_TO_AGGREGATE, $global:CONST_AUDITS_LINKED, $IncludeLinkedInstances, $ByTime, $Start, $End, $FilePath -ScriptBlock {
+    Invoke-Command -Session $Session -ArgumentList $Query, $Log, $script:CONST_ADFS_AUDIT, $script:CONST_AUDITS_TO_AGGREGATE, $script:CONST_AUDITS_LINKED, $IncludeLinkedInstances, $ByTime, $Start, $End, $FilePath -ScriptBlock {
         param(
         [string]$Query, 
         [string]$Log,
@@ -267,7 +267,7 @@ function GetSecurityEvents
 
     )
 
-    $Query = "*[System[Provider[@Name='{0}']]]" -f $global:CONST_ADFS_AUDIT
+    $Query = "*[System[Provider[@Name='{0}']]]" -f $script:CONST_ADFS_AUDIT
 
     if($CorrID.Length -gt 0)
     {
@@ -275,7 +275,7 @@ function GetSecurityEvents
     }
 
     # Perform the log query 
-    return MakeQuery -Query $Query -Log $global:CONST_SECURITY_LOG -Session $Session -ByTime $ByTime -Start $Start -End $End -IncludeLinkedInstances $IncludeLinkedInstances -FilePath $FilePath
+    return MakeQuery -Query $Query -Log $script:CONST_SECURITY_LOG -Session $Session -ByTime $ByTime -Start $Start -End $End -IncludeLinkedInstances $IncludeLinkedInstances -FilePath $FilePath
 }
 
 function GetAdminEvents
@@ -310,14 +310,14 @@ function GetAdminEvents
     ) 
 
     # Default to query all 
-    $Query = "*[System[Provider[@Name='{0}']]]" -f $global:CONST_ADFS_ADMIN
+    $Query = "*[System[Provider[@Name='{0}']]]" -f $script:CONST_ADFS_ADMIN
 
     if ( $CorrID.length -gt 0 )
     {
         $Query +=  " and *[System[Correlation[@ActivityID='{$CorrID}']]]"
     }
 
-    return MakeQuery -Query $Query -Log $global:CONST_ADMIN_LOG -Session $Session -ByTime $ByTime -Start $Start -End $End -FilePath $FilePath
+    return MakeQuery -Query $Query -Log $script:CONST_ADMIN_LOG -Session $Session -ByTime $ByTime -Start $Start -End $End -FilePath $FilePath
 }
 
 function GetDebugEvents
@@ -352,14 +352,14 @@ function GetDebugEvents
     )
 
     # Default to query all
-     $Query = "*[System[Provider[@Name='{0}']]]" -f $global:CONST_ADFS_DEBUG
+     $Query = "*[System[Provider[@Name='{0}']]]" -f $script:CONST_ADFS_DEBUG
 
     if ( $CorrID.length -gt 0 )
     {
         $Query +=  " and *[System[Correlation[@ActivityID='{$CorrID}']]]"
     }
 
-    return MakeQuery -Query $Query -Log $global:CONST_DEBUG_LOG -Session $Session -ByTime $ByTime -Start $Start -End $End -FilePath $FilePath
+    return MakeQuery -Query $Query -Log $script:CONST_DEBUG_LOG -Session $Session -ByTime $ByTime -Start $Start -End $End -FilePath $FilePath
 }
 
 function QueryDesiredLogs
@@ -398,17 +398,17 @@ function QueryDesiredLogs
 
     $Events = @()
 
-    if ($Logs -contains $global:CONST_LOG_PARAM_SECURITY)
+    if ($Logs -contains $script:CONST_LOG_PARAM_SECURITY)
     {
         $Events += GetSecurityEvents -CorrID $CorrID -Session $Session -ByTime $ByTime -Start $Start -End $End -IncludeLinkedInstances $IncludeLinkedInstances -FilePath $FilePath
     }
 
-    if ($Logs -contains $global:CONST_LOG_PARAM_DEBUG)
+    if ($Logs -contains $script:CONST_LOG_PARAM_DEBUG)
     {
         $Events += GetDebugEvents -CorrID $CorrID -Session $Session -ByTime $ByTime -Start $Start -End $End -FilePath $FilePath
     }
 
-    if ($Logs -contains $global:CONST_LOG_PARAM_ADMIN)
+    if ($Logs -contains $script:CONST_LOG_PARAM_ADMIN)
     {
         $Events += GetAdminEvents -CorrID $CorrID -Session $Session -ByTime $ByTime -Start $Start -End $End -FilePath $FilePath
     }
@@ -513,7 +513,7 @@ function Process-TokensFromEvent
 
     if ( $event.Id -eq 412 -or $event.Id -eq 324 )
     {
-        $tokenObj = NewObjectFromTemplate -Template $global:TOKEN_OBJ_TEMPLATE
+        $tokenObj = NewObjectFromTemplate -Template $script:TOKEN_OBJ_TEMPLATE
         $claims = @()
         foreach ( $linkedEvent in $LinkedEvents[$event.RemoteProperties[0]] ) #InstanceID
         {
@@ -531,8 +531,8 @@ function Process-TokensFromEvent
 
     if ( $event.Id -eq 299 )
     {
-        $tokenObjIn = NewObjectFromTemplate -Template $global:TOKEN_OBJ_TEMPLATE
-        $tokenObjOut = NewObjectFromTemplate -Template $global:TOKEN_OBJ_TEMPLATE
+        $tokenObjIn = NewObjectFromTemplate -Template $script:TOKEN_OBJ_TEMPLATE
+        $tokenObjOut = NewObjectFromTemplate -Template $script:TOKEN_OBJ_TEMPLATE
 
         $claimsIn = @()
         $claimsOut = @()
@@ -573,7 +573,7 @@ function Generate-ErrorEvent
         [object]$event
     )
 
-    $errorObj = NewObjectFromTemplate -Template $global:ERROR_OBJ_TEMPLATE
+    $errorObj = NewObjectFromTemplate -Template $script:ERROR_OBJ_TEMPLATE
     $errorObj.time = $event.TimeCreated
     $errorObj.eventid = $event.Id
     $errorObj.message = $event.Message
@@ -595,7 +595,7 @@ function Generate-ResponseEvent
         [object]$LinkedEvents
     )
 
-    $response = NewObjectFromTemplate -Template $global:RESPONSE_OBJ_TEMPLATE
+    $response = NewObjectFromTemplate -Template $script:RESPONSE_OBJ_TEMPLATE
     $response.num = $requestCount
 
     # Return an empty response object if we don't have data to use 
@@ -633,7 +633,7 @@ function Generate-RequestEvent
         [object]$LinkedEvents
     )
 
-    $currentRequest = NewObjectFromTemplate -Template $global:REQUEST_OBJ_TEMPLATE
+    $currentRequest = NewObjectFromTemplate -Template $script:REQUEST_OBJ_TEMPLATE
     $currentRequest.num = $requestCount
 
     # Return an empty request object if we don't have data to use 
@@ -662,19 +662,19 @@ function Generate-RequestEvent
 
     # Load the HTTP and HTTPS ports, if we haven't already 
     # We need these to convert the 'LocalPort' field in the 403 audit
-    if (-not $global:DidLoadPorts)
+    if (-not $script:DidLoadPorts)
     {
-        $global:CONST_ADFS_HTTP_PORT = (Get-AdfsProperties).HttpPort
-        $global:CONST_ADFS_HTTPS_PORT = (Get-AdfsProperties).HttpsPort
-        $global:DidLoadPorts = $true 
+        $script:CONST_ADFS_HTTP_PORT = (Get-AdfsProperties).HttpPort
+        $script:CONST_ADFS_HTTPS_PORT = (Get-AdfsProperties).HttpsPort
+        $script:DidLoadPorts = $true 
     }
              
-    if ( $event.RemoteProperties[7] -eq $global:CONST_ADFS_HTTP_PORT)
+    if ( $event.RemoteProperties[7] -eq $script:CONST_ADFS_HTTP_PORT)
     {
         $currentRequest.protocol = "HTTP"
     }
 
-    if ( $event.RemoteProperties[7] -eq $global:CONST_ADFS_HTTPS_PORT)
+    if ( $event.RemoteProperties[7] -eq $script:CONST_ADFS_HTTPS_PORT)
     {
         $currentRequest.protocol = "HTTPS"
     }
@@ -748,22 +748,22 @@ function Generate-TimelineEvent
         [object]$event
     )
 
-    $timelineEvent = NewObjectFromTemplate -Template $global:TIMELINE_OBJ_TEMPLATE
+    $timelineEvent = NewObjectFromTemplate -Template $script:TIMELINE_OBJ_TEMPLATE
     $timelineEvent.time = $event.TimeCreated
     
     # 403 - request received
     if ( $event.Id -eq 403 )
     {
-        $timelineEvent.type = $global:TIMELINE_INCOMING
-        $timelineEvent.result = $global:TIMELINE_SUCCESS
+        $timelineEvent.type = $script:TIMELINE_INCOMING
+        $timelineEvent.result = $script:TIMELINE_SUCCESS
         return $timelineEvent
     }       
     
     # 411 - token validation failure 
     if ( $event.Id -eq 411 )
     {    
-        $timelineEvent.type = $global:TIMELINE_AUTHENTICATION
-        $timelineEvent.result = $global:TIMELINE_FAILURE
+        $timelineEvent.type = $script:TIMELINE_AUTHENTICATION
+        $timelineEvent.result = $script:TIMELINE_FAILURE
         $timelineEvent.tokentype = $event.RemoteProperties[1] #Token Type
         return $timelineEvent
     }
@@ -771,8 +771,8 @@ function Generate-TimelineEvent
     # 412 - authentication success 
     if ( $event.Id -eq 412 )
     {
-        $timelineEvent.type = $global:TIMELINE_AUTHENTICATION
-        $timelineEvent.result = $global:TIMELINE_SUCCESS
+        $timelineEvent.type = $script:TIMELINE_AUTHENTICATION
+        $timelineEvent.result = $script:TIMELINE_SUCCESS
         $timelineEvent.tokentype = $event.RemoteProperties[2] #Token Type
         $timelineEvent.rp = $event.RemoteProperties[3] #RP
         return $timelineEvent
@@ -781,8 +781,8 @@ function Generate-TimelineEvent
     # 324 - authorization failure 
     if ( $event.Id -eq 324 )
     {
-        $timelineEvent.type = $global:TIMELINE_AUTHORIZATION
-        $timelineEvent.result = $global:TIMELINE_FAILURE
+        $timelineEvent.type = $script:TIMELINE_AUTHORIZATION
+        $timelineEvent.result = $script:TIMELINE_FAILURE
         $timelineEvent.rp = $event.RemoteProperties[3] #RP
         return $timelineEvent
     }
@@ -790,10 +790,10 @@ function Generate-TimelineEvent
     # 299 - token issuance success
     if ( $event.Id -eq 299 )
     {
-        $timelineEvent.type = $global:TIMELINE_ISSUANCE
-        $timelineEvent.result = $global:TIMELINE_SUCCESS
+        $timelineEvent.type = $script:TIMELINE_ISSUANCE
+        $timelineEvent.result = $script:TIMELINE_SUCCESS
         $timelineEvent.rp = $event.RemoteProperties[2] #RP
-        $timelineEvent.tokentype = $global:TOKEN_TYPE_ACCESS
+        $timelineEvent.tokentype = $script:TOKEN_TYPE_ACCESS
         return $timelineEvent
     }
 
@@ -851,7 +851,7 @@ function Process-EventsForAnalysis
         }
 
         # If this event signals a timeline event, generate it 
-        if ( $event.Id -in $global:CONST_TIMELINE_AUDITS)
+        if ( $event.Id -in $script:CONST_TIMELINE_AUDITS)
         {
             $allTimeline += Generate-TimelineEvent -event $event 
         }
@@ -948,7 +948,7 @@ function Process-EventsForAnalysis
     #
     # Generate the complete analysis JSON object 
     #    
-    $analysisObj = NewObjectFromTemplate -Template $global:ANALYSIS_OBJ_TEMPLATE
+    $analysisObj = NewObjectFromTemplate -Template $script:ANALYSIS_OBJ_TEMPLATE
 
     $allRequests = @()
     $allResponses = @()
@@ -1014,44 +1014,25 @@ function Write-ADFSEventsSummary
 
     #>
 
-    # Create Table object
-    $table = New-Object system.Data.DataTable "SummaryTable"
+    param(
+        [parameter(ValueFromPipeline=$True)]
+        [PSObject]$Events
+    )
 
-    # Define Columns
-    $col1 = New-Object system.Data.DataColumn Time,([string])
-    $col2 = New-Object System.Data.DataColumn Level,([string])
-    $col3 = New-Object system.Data.DataColumn EventID,([string])
-    $col4 = New-Object system.Data.DataColumn Details,([string])
-    $col5 = New-Object system.Data.DataColumn CorrelationID,([string])
-    $col6 = New-Object system.Data.DataColumn Machine,([string])
-    $col7 = New-Object system.Data.DataColumn Log,([string])
-    $table.columns.add( $col1 )
-    $table.columns.add( $col2 )
-    $table.columns.add( $col3 )
-    $table.columns.add( $col4 )
-    $table.columns.add( $col5 )
-    $table.columns.add( $col6 )
-    $table.columns.add( $col7 )
-
-    foreach($Event in $input.Events)
+    foreach($Event in $Events)
     {
-        #Create a row
-        $row = $table.NewRow()
+        $newRow = New-Object PSObject -Property @{            
+            Time = $Event.TimeCreated               
+            Level = $Event.LevelDisplayName            
+            EventID = $Event.Id        
+            Details = $Event.Message           
+            CorrelationID = $Event.CorrelationID           
+            Machine = $Event.MachineName        
+            Log = $Event.LogName                   
+        }  
 
-        $row.Time = $Event.TimeCreated
-        $row.EventID = $Event.Id
-        $row.Details = $Event.Message
-        $row.CorrelationID = $Event.CorrelationID
-        $row.Machine = $Event.MachineName
-        $row.Log = $Event.LogName
-	    $row.Level = $Event.LevelDisplayName
-
-        #Add the row to the table
-        $table.Rows.Add($row)    
-
+        Write-Output $newRow
     }
-
-    return $table
 }
 
 
@@ -1206,8 +1187,6 @@ function Get-ADFSEvents
     # Note: When we do the correlation ID aggregation, we are dropping any events that do not have a correlation ID set. 
     #  All Admin logs should have a correlation ID, and all audits should either have a correlation ID, or have a separate 
     #  record, which is identical, but contains a correlation ID (we do this for audits that have an instance ID, but no correlation ID)
-
-    $allAggObjects = @()
     foreach ( $corrId in $EventsByCorrId.Keys )
     {
         $eventsData = @()
@@ -1222,10 +1201,9 @@ function Get-ADFSEvents
             $dataObj = Process-EventsForAnalysis -events $eventsData
         }
 
-        $allAggObjects += AggregateOutputObject -Data $dataObj -Events $eventsData -CorrID $corrId
+        $aggObject = AggregateOutputObject -Data $dataObj -Events $eventsData -CorrID $corrId
+        Write-Output $aggObject
     }
-
-    return $allAggObjects
 }
 
 #
