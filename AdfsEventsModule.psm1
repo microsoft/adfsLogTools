@@ -11,6 +11,8 @@ $script:CONST_ADFS_ADMIN = "AD FS"
 $script:CONST_ADFS_AUDIT = "AD FS Auditing"
 $script:CONST_ADFS_DEBUG = "AD FS Tracing"
 
+$script:CONST_ADFS_20 = "AD FS 2.0"
+
 $script:CONST_SECURITY_LOG = "security"
 $script:CONST_ADMIN_LOG = "AD FS/Admin"
 $script:CONST_DEBUG_LOG = "AD FS Tracing/Debug"
@@ -436,7 +438,7 @@ function MakeQuery
     )
 
     # Get-WinEvent is performed through a remote powershell session to avoid firewall issues that arise from simply passing a computer name to Get-WinEvent  
-    Invoke-Command -Session $Session -ArgumentList $Query, $Log, $script:CONST_ADFS_AUDIT, $script:CONST_AUDITS_TO_AGGREGATE, $script:CONST_AUDITS_LINKED, $IncludeLinkedInstances, $ByTime, $Start, $End, $FilePath -ScriptBlock {
+    Invoke-Command -Session $Session -ArgumentList $Query, $Log, $script:CONST_ADFS_AUDIT, $script:CONST_AUDITS_TO_AGGREGATE, $script:CONST_AUDITS_LINKED, $IncludeLinkedInstances, $ByTime, $Start, $End, $FilePath, $script:CONST_ADFS_20 -ScriptBlock {
         param(
         [string]$Query, 
         [string]$Log,
@@ -447,7 +449,16 @@ function MakeQuery
         [bool]$ByTime,
         [DateTime]$Start,
         [DateTime]$End,
-        [string]$FilePath)
+        [string]$FilePath,
+        [string]$Adfs20)
+
+        if ( (Get-WinEvent -ListProvider '*AD FS*' | where { $_.Name -match $Adfs20 }).Length -gt 0 )
+        {
+            #ADFS 2.0 compatibility - change providername, log, query
+            $providername = $providername -replace "AD FS", "AD FS 2.0"
+            $Log = $Log -replace "AD FS", "AD FS 2.0"
+            $Query = $Query -replace "AD FS", "AD FS 2.0"
+        }
 
         #
         # Perform Get-WinEvent call to collect logs 
