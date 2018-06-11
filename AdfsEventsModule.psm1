@@ -436,7 +436,7 @@ function MakeQuery
     )
 
     # Get-WinEvent is performed through a remote powershell session to avoid firewall issues that arise from simply passing a computer name to Get-WinEvent  
-    Invoke-Command -Session $Session -ArgumentList $Query, $Log, $script:CONST_ADFS_AUDIT, $script:CONST_AUDITS_TO_AGGREGATE, $script:CONST_AUDITS_LINKED, $IncludeLinkedInstances, $ByTime, $Start, $End, $FilePath -ScriptBlock {
+    Invoke-Command -Session $Session -ArgumentList $Query, $Log, $script:CONST_ADFS_AUDIT, $script:CONST_AUDITS_TO_AGGREGATE, $script:CONST_AUDITS_LINKED, $IncludeLinkedInstances, $ByTime, $Start, $End, $FilePath, ${function:IsValidGUID} -ScriptBlock {
         param(
         [string]$Query, 
         [string]$Log,
@@ -447,7 +447,8 @@ function MakeQuery
         [bool]$ByTime,
         [DateTime]$Start,
         [DateTime]$End,
-        [string]$FilePath)
+        [string]$FilePath,
+        [ScriptBlock] $IsValidGUIDfc)
 
         #
         # Perform Get-WinEvent call to collect logs 
@@ -508,7 +509,7 @@ function MakeQuery
             # If we didn't have an ActivityId, try to extract one manually 
             if ( (-not $Event.ActivityId) -and $Event.Properties.count -gt 0 )
             {
-                if ( IsValidGUID( $Event.Properties[1].Value) )
+                if ( $IsValidGUIDfc.Invoke( $Event.Properties[1].Value) )
                 {
                     $Event | Add-Member -Name CorrelationID -Value $Event.Properties[1].Value -MemberType NoteProperty
                 }                
