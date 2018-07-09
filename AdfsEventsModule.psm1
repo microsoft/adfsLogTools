@@ -436,7 +436,7 @@ function MakeQuery
     )
 
     # Get-WinEvent is performed through a remote powershell session to avoid firewall issues that arise from simply passing a computer name to Get-WinEvent  
-    Invoke-Command -Session $Session -ArgumentList $Query, $Log, $script:CONST_ADFS_AUDIT, $script:CONST_AUDITS_TO_AGGREGATE, $script:CONST_AUDITS_LINKED, $IncludeLinkedInstances, $ByTime, $Start, $End, $FilePath -ScriptBlock {
+    Invoke-Command -Session $Session -ArgumentList $Query, $Log, $script:CONST_ADFS_AUDIT, $script:CONST_AUDITS_TO_AGGREGATE, $script:CONST_AUDITS_LINKED, $IncludeLinkedInstances, $ByTime, $Start, $End, $FilePath, ${function:IsValidGUID}.ScriptBlock -ScriptBlock {
         param(
         [string]$Query, 
         [string]$Log,
@@ -447,7 +447,8 @@ function MakeQuery
         [bool]$ByTime,
         [DateTime]$Start,
         [DateTime]$End,
-        [string]$FilePath)
+        [string]$FilePath,
+        [ScriptBlock] $IsValidGUIDfc)
 
         #
         # Perform Get-WinEvent call to collect logs 
@@ -488,30 +489,29 @@ function MakeQuery
         #
         $instanceIdsToQuery = @{}
 
-        foreach ( $Event in $Result )
+        foreach ( $Event in $Result | Where { $null -ne $_ } )
         {
             # Copy over all properties so they remain accessible when remote session terminates
 
             $Properties = @()
             foreach ( $Property in $Event.Properties )
             {
-                $Properties += $Property.value
+                $Properties += $Property.Value
             }
-            $Event | Add-Member RemoteProperties $Properties
+            $Event | Add-Member -Name RemoteProperties -Value $Properties -MemberType NoteProperty
             
             if ( $Event.ActivityId )
             {
                 # We have an Activity ID, set the CorrelationID field for consistency 
-                $Event | Add-Member CorrelationID $Event.ActivityId.Guid
+                $Event | Add-Member -Name CorrelationID -Value $Event.ActivityId.Guid -MemberType NoteProperty
             }
 
             # If we didn't have an ActivityId, try to extract one manually 
             if ( (-not $Event.ActivityId) -and $Event.Properties.count -gt 0 )
             {
-                $guidRef = [ref] [System.Guid]::NewGuid()
-                if ( [System.Guid]::TryParse( $Event.Properties[1].Value, $guidRef ) ) 
+                if ( $IsValidGUIDfc.Invoke( $Event.Properties[1].Value) )
                 {
-                    $Event | Add-Member CorrelationID $Event.Properties[1].Value 
+                    $Event | Add-Member -Name CorrelationID -Value $Event.Properties[1].Value -MemberType NoteProperty
                 }                
             }
 
@@ -561,9 +561,9 @@ function MakeQuery
                                 $Properties += $Property.value
                             }
 
-                            $instanceEvent | Add-Member RemoteProperties $Properties
-                            $instanceEvent | Add-Member AdfsInstanceId $instanceEvent.Properties[0].Value
-                            $instanceEvent | Add-Member CorrelationID $correlationID
+                            $instanceEvent | Add-Member -Name RemoteProperties -Value $Properties -MemberType NoteProperty
+                            $instanceEvent | Add-Member -Name AdfsInstanceId -Value $instanceEvent.Properties[0].Value -MemberType NoteProperty
+                            $instanceEvent | Add-Member -Name CorrelationID -Value $correlationID -MemberType NoteProperty
 
                             $Result += $instanceEvent
                         }                    
@@ -780,8 +780,32 @@ function NewObjectFromTemplate
     return $Template | ConvertFrom-Json
 }
 
+# ----------------------------------------------------
+#
+# Helper Functions - GUID for PS2.0 compatibility
+#
+# ----------------------------------------------------
 
+function IsValidGUID
+{
+    param(
+        [parameter(Mandatory=$true)]
+        [string] $Guid
+    )
 
+    # Current PS has "TryParse" method
+    if ( $null -ne [System.Guid].GetMethod("TryParse") ) {
+        $guidRef = [ref] [System.Guid]::NewGuid()
+        return [System.Guid]::TryParse( $Guid, $guidRef )
+    }
+
+    try {
+        $tmp = New-Object System.Guid($Guid)
+        return $true
+    } catch [Exception] {
+        return $false
+    }
+}
 
 
 
@@ -1194,7 +1218,7 @@ function Process-EventsForAnalysis
         }
 
         # If this event signals a timeline event, generate it 
-        if ( $event.Id -in $script:CONST_TIMELINE_AUDITS)
+        if ( $script:CONST_TIMELINE_AUDITS -contains $event.Id )
         {
             $allTimeline += Generate-TimelineEvent -event $event 
         }
@@ -1438,7 +1462,7 @@ function Get-ADFSEvents
     [string]$FilePath,
     
     [parameter(Mandatory=$false, ValueFromPipeline=$True, ValueFromPipelineByPropertyName=$True)]
-    [PSCredential]$Credential
+    [System.Management.Automation.PSCredential]$Credential
     )
 
     # TODO: Add warning if environment is not Win2016
@@ -1478,8 +1502,7 @@ function Get-ADFSEvents
     }
 
     # Validate Correlation ID is a valid GUID
-    $guidRef = [ref] [System.Guid]::NewGuid()
-    if ( (!$All -and !$ByTime) -and ($CorrelationID.length -eq 0 -or ![System.Guid]::TryParse( $CorrelationID, $guidRef )) ){ 
+    if ( (!$All -and !$ByTime) -and ($CorrelationID.length -eq 0 -or !(IsValidGUID($CorrelationID))) ){ 
         Write-Error "Invalid Correlation ID. Please provide a valid GUID."
         Break
     }
