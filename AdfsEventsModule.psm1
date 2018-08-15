@@ -1204,7 +1204,7 @@ function Write-ADFSEventsSummary
 }
 
 
-function Get-ADFSEvents
+function Get-AdfsEvents
 {
 
     <#
@@ -1221,15 +1221,15 @@ function Get-ADFSEvents
     time conversions will be based on the UTC of these values.
 
     .EXAMPLE
-    Get-ADFSEvents -Logs Security, Admin, Debug -CorrelationID 669bced6-d6ae-4e69-889b-09ceb8db78c9 -Server LocalHost, MyServer
+    Get-AdfsEvents -Logs Security, Admin, Debug -CorrelationID 669bced6-d6ae-4e69-889b-09ceb8db78c9 -Server LocalHost, MyServer
     .Example
-    Get-ADFSEvents -CorrelationID 669bced6-d6ae-4e69-889b-09ceb8db78c9 -Headers
+    Get-AdfsEvents -CorrelationID 669bced6-d6ae-4e69-889b-09ceb8db78c9 -Headers
     .EXAMPLE
-    Get-ADFSEvents -Logs Admin -All 
+    Get-AdfsEvents -Logs Admin -All 
     .EXAMPLE
-    Get-ADFSEvents -Logs Debug, Security -All -Headers -Server LocalHost, Server1, Server2
+    Get-AdfsEvents -Logs Debug, Security -All -Headers -Server LocalHost, Server1, Server2
     .Example
-    Get-ADFSEvents -Logs Debug -StartTime (Get-Date -Date ("2017-09-14T18:37:26.910168700Z"))  -EndTime (Get-Date) -Headers
+    Get-AdfsEvents -Logs Debug -StartTime (Get-Date -Date ("2017-09-14T18:37:26.910168700Z"))  -EndTime (Get-Date) -Headers
 
     #>
 
@@ -1389,5 +1389,5 @@ function Get-ADFSEvents
 #
 Export-ModuleMember -Function Enable-ADFSAuditing
 Export-ModuleMember -Function Disable-ADFSAuditing
-Export-ModuleMember -Function Get-ADFSEvents
+Export-ModuleMember -Function Get-AdfsEvents
 Export-ModuleMember -Function Write-ADFSEventsSummary
