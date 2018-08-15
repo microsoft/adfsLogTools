@@ -38,6 +38,7 @@ time will be aggregated
 will be aggregated
 * __Server__ - A comma-separated list of server names to pull logs from. On ADFS 2016 and up, you can use "\*" to query all
 The default will query LocalHost
+* __FilePath__ - A file path to an EVTX log file that you want to read from, instead of querying your servers
 
 ## Get-AdfsEvents Output
 
